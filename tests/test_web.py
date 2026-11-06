@@ -191,6 +191,17 @@ def test_page_when_the_compute_server_is_down(client, fake):
     assert "<iframe" not in html
 
 
+def test_numeric_fields_accept_the_values_the_site_proposes(client):
+    """Un champ `number` avec min=5 et step=10 refuse 100 ou 250 (seulement 5, 15, 25...) : le navigateur
+    bloquerait « Afficher ». L'étendue doit accepter n'importe quelle valeur."""
+    html = client.get("/").get_data(as_text=True)
+    span = html.split('name="span"')[1].split(">")[0]
+    assert 'step="any"' in span
+    for field in ("limit", "seed"):  # entiers : un pas de 1 depuis un minimum entier convient
+        tag = html.split(f'name="{field}"')[1].split(">")[0]
+        assert 'step="1"' in tag or "step" not in tag
+
+
 def test_garbage_parameters_are_ignored(client):
     r = client.get("/?zone=Mars&span=xyz&limit=abc&seed=-3&solver=magie&view=zzz")
     assert r.status_code == 200 and "France entière" in r.get_data(as_text=True)

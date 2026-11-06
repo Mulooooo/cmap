@@ -107,7 +107,7 @@ def render_page(params: dict, error: str | None = None, status: int = 200):
         "limit": limit, "seed": seed, "solvers": [], "solver": params.get("solver"),
         "instances": [], "instance_id": None, "inst": None, "job": None, "running": False, "banner": None,
         "settings": {}, "tabs": False, "map_main": None, "map_best": None, "mine": None, "best": None,
-        "scale": None, "sim_urls": {},
+        "scale": None, "sim_urls": {}, "sim": None, "sim_active": None, "sim_exit_url": None,
     }
 
     try:
@@ -211,21 +211,67 @@ def render_page(params: dict, error: str | None = None, status: int = 200):
     if best is not None:
         layers.append(MapLayer("Meilleure solution connue", best["routes"], best["stats"],
                                dashed=mine is not None, show=mine is None))
-    tabs = mine is not None and best is not None and not running
-    ctx["tabs"] = tabs
-    ctx["map_main"] = build_map(frame, demand, capacity, layers)
-    if tabs:
-        ctx["map_best"] = build_map(frame, demand, capacity,
-                                    [MapLayer("Meilleure solution connue", best["routes"], best["stats"])])
     ctx["mine"] = mine
     ctx["best"] = None if running else best
+
+    # ---- simulation sur les vraies routes : demandée par ?sim=mine|best, elle reste sur cette page
+    # et remplace la carte habituelle par la carte animée
+    base = {"instance": wanted, "zone": zone, "span": span_typed, "solver": ctx["solver"], "limit": limit,
+            "seed": seed, "job": ctx["job"] or ""}
+    can_sim_mine = mine is not None and job is not None and job["status"] in ("done", "stopped")
     if not running:  # on ne simule qu'une solution terminée
-        base = {"instance": wanted, "zone": zone, "span": span_typed, "solver": ctx["solver"], "limit": limit,
-                "seed": seed, "job": ctx["job"] or ""}
-        if mine is not None and job is not None and job["status"] in ("done", "stopped"):
-            ctx["sim_urls"]["mine"] = "/simulation?" + urlencode({**base, "view": "mine"})
+        if can_sim_mine:
+            ctx["sim_urls"]["mine"] = "/?" + urlencode({**base, "sim": "mine"}) + "#carte"
         if best is not None:
-            ctx["sim_urls"]["best"] = "/simulation?" + urlencode({**base, "view": "best"})
+            ctx["sim_urls"]["best"] = "/?" + urlencode({**base, "sim": "best"}) + "#carte"
+    ctx["sim_exit_url"] = "/?" + urlencode(base) + "#carte"
+
+    sim_view = params.get("sim") if params.get("sim") in ("mine", "best") else None
+    sim_routes = sim_title = None
+    if sim_view and not running:
+        if sim_view == "mine" and can_sim_mine:
+            sim_routes, sim_title = mine["routes"], f"Ma solution ({mine['solver']})"
+        elif sim_view == "mine":
+            ctx["error"] = ctx["error"] or "Lance d'abord un calcul : il n'y a pas encore de solution à simuler."
+        elif best is not None:
+            sim_routes, sim_title = best["routes"], "Meilleure solution connue"
+        else:
+            ctx["error"] = ctx["error"] or "Cette instance n'a pas de meilleure solution connue à simuler."
+
+    simulation = None
+    if sim_routes:
+        try:
+            simulation = build_simulation(frame, sim_routes, current_app.extensions["routing"], cfg["SERVICE_SECONDS"])
+        except RoutingUnavailable as exc:  # on garde la page et sa carte habituelle, avec le message
+            ctx["error"] = ctx["error"] or f"{exc}. Réessaie dans un instant (il faut une connexion Internet)."
+
+    if simulation is not None:
+        plan = route_stats(inst, sim_routes)  # distances de l'instance (plan abstrait), à l'échelle de la carte
+        for t, st in zip(simulation.trucks, plan):
+            t["plan_km"] = st["distance"] * kpu
+            t["drive_h"], t["total_h"] = t["drive_s"] / 3600, t["total_s"] / 3600
+        token = secrets.token_urlsafe(8)
+        cache: OrderedDict = current_app.extensions["sim_cache"]
+        cache[token] = simulation.html
+        while len(cache) > 8:  # on ne garde que les dernières cartes
+            cache.popitem(last=False)
+        ctx["sim"] = {
+            "token": token, "title": sim_title, "trucks": simulation.trucks, "warnings": simulation.warnings,
+            "service_min": cfg["SERVICE_SECONDS"] // 60,
+            "long_tours": any(t["total_h"] > 12 for t in simulation.trucks),
+            "totals": {"road_km": sum(t["road_km"] for t in simulation.trucks),
+                       "plan_km": sum(t["plan_km"] for t in simulation.trucks),
+                       "last_return": clock(max(t["total_s"] for t in simulation.trucks))},
+        }
+        ctx["sim_active"] = sim_view
+        # la carte de la page devient la simulation ; pas d'onglets, les deux solutions restent listées
+    else:
+        tabs = mine is not None and best is not None and not running
+        ctx["tabs"] = tabs
+        ctx["map_main"] = build_map(frame, demand, capacity, layers)
+        if tabs:
+            ctx["map_best"] = build_map(frame, demand, capacity,
+                                        [MapLayer("Meilleure solution connue", best["routes"], best["stats"])])
     ctx["settings"] = {"Zone": zone, "Étendue": f"{fr(span)} km", **ctx["settings"]}
     return render_template("page.html", **ctx), status
 
@@ -244,7 +290,7 @@ def index():
 @bp.post("/")
 def submit():
     api, form = _api(), request.form
-    params = {k: form.get(k, "") for k in ("instance", "zone", "span", "solver", "limit", "seed", "job")}
+    params = {k: form.get(k, "") for k in ("instance", "zone", "span", "solver", "limit", "seed", "job", "sim")}
     action = form.get("action", "show")
 
     file = request.files.get("file")
@@ -255,7 +301,7 @@ def submit():
             return render_page(params, str(exc), 200)
         except ApiError as exc:  # fichier illisible, trop gros...
             return render_page(params, exc.message, 400)
-        params.update(instance=created["id"], job="")  # nouvelle instance : on repart de zéro
+        params.update(instance=created["id"], job="", sim="")  # nouvelle instance : on repart de zéro
 
     try:
         if action == "stop" and params["job"]:
@@ -264,7 +310,7 @@ def submit():
         if action == "solve":
             started = api.start_job(params["instance"], params["solver"],
                                     _num(params["limit"], 10, 1, 300, int), _num(params["seed"], 0, 0, 100000, int))
-            return _redirect({**params, "job": started["job_id"]})
+            return _redirect({**params, "job": started["job_id"], "sim": ""})  # nouveau calcul : plus de simulation
     except Unreachable as exc:
         return render_page(params, str(exc), 200)
     except ApiError as exc:
@@ -274,83 +320,7 @@ def submit():
     return _redirect(params)  # action == "show"
 
 
-# ------------------------------------------------------------------------ simulation
-class SimError(Exception):
-    """Pas de solution à simuler (l'utilisateur doit d'abord lancer ou terminer un calcul)."""
-
-
-def _back_url(params: dict) -> str:
-    keep = {k: params.get(k) for k in ("instance", "zone", "span", "solver", "limit", "seed", "job")}
-    return "/?" + urlencode({k: v for k, v in keep.items() if v})
-
-
-def _simulation_input(params: dict):
-    """(instance, tournées à simuler, nom de la solution, placement sur la carte)."""
-    api = _api()
-    try:
-        inst = api.instance(params.get("instance") or "")
-    except ApiError as exc:
-        raise SimError(exc.message) from exc
-    except Unreachable as exc:
-        raise SimError(str(exc)) from exc
-
-    zone = params.get("zone") if params.get("zone") in PRESETS else next(iter(PRESETS))
-    span_typed = str(params.get("span") or "").strip()
-    span = _num(span_typed, PRESETS[zone][2], 5.0, 3000.0) if span_typed else PRESETS[zone][2]
-    frame = place_on_map(np.array(inst["coords"], dtype=float), PRESETS[zone][0], PRESETS[zone][1], span)
-
-    if params.get("view") == "best":
-        routes = (inst.get("best_known") or {}).get("routes")
-        if not routes:
-            raise SimError("Cette instance n'a pas de meilleure solution connue à simuler.")
-        return inst, routes, "Meilleure solution connue", frame
-    if not params.get("job"):
-        raise SimError("Lance d'abord un calcul : il n'y a pas encore de solution à simuler.")
-    try:
-        job = api.job(params["job"])
-    except ApiError as exc:
-        raise SimError("Ce calcul n'existe plus : relance-le." if exc.status == 404 else exc.message) from exc
-    except Unreachable as exc:
-        raise SimError(str(exc)) from exc
-    if job["result"] is None:
-        raise SimError("Le calcul n'est pas terminé : attends la fin, ou arrête-le, pour simuler sa meilleure solution.")
-    return inst, job["result"]["routes"], f"Ma solution ({job['solver']})", frame
-
-
-@bp.get("/simulation")
-def simulation():
-    params, cfg = dict(request.args), current_app.config
-    ctx = {"back": _back_url(params), "error": None, "title": None, "inst": None, "trucks": [], "warnings": [],
-           "token": None, "service_min": cfg["SERVICE_SECONDS"] // 60, "totals": None, "long_tours": False}
-    try:
-        inst, routes, title, frame = _simulation_input(params)
-    except SimError as exc:
-        ctx["error"] = str(exc)
-        return render_template("simulation.html", **ctx), 200
-    ctx.update(title=title, inst={"name": inst["name"], "n_clients": inst["n_clients"]})
-
-    try:
-        sim = build_simulation(frame, routes, current_app.extensions["routing"], cfg["SERVICE_SECONDS"])
-    except RoutingUnavailable as exc:
-        ctx["error"] = f"{exc}. Réessaie dans un instant (il faut une connexion Internet)."
-        return render_template("simulation.html", **ctx), 200
-
-    plan = route_stats(inst, routes)  # distances de l'instance (plan abstrait), converties en km de la carte
-    for t, st in zip(sim.trucks, plan):
-        t["plan_km"] = st["distance"] * frame.km_per_unit
-        t["drive_h"], t["total_h"] = t["drive_s"] / 3600, t["total_s"] / 3600
-    ctx["trucks"], ctx["warnings"] = sim.trucks, sim.warnings
-    ctx["long_tours"] = any(t["total_h"] > 12 for t in sim.trucks)  # conseil : réduire l'étendue sur la carte
-    ctx["totals"] = {"road_km": sum(t["road_km"] for t in sim.trucks), "plan_km": sum(t["plan_km"] for t in sim.trucks),
-                     "last_return": clock(max(t["total_s"] for t in sim.trucks)) if sim.trucks else None}
-    cache: OrderedDict = current_app.extensions["sim_cache"]
-    ctx["token"] = secrets.token_urlsafe(8)
-    cache[ctx["token"]] = sim.html
-    while len(cache) > 8:  # on ne garde que les dernières cartes
-        cache.popitem(last=False)
-    return render_template("simulation.html", **ctx)
-
-
+# ------------------------------------------------------------------ carte de la simulation
 @bp.get("/simulation/map/<token>")
 def simulation_map(token):
     html = current_app.extensions["sim_cache"].get(token)

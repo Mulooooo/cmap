@@ -40,11 +40,14 @@ python -m web         # 2) le site               -> http://127.0.0.1:5002
 ## Simulation sur les vraies routes
 
 Sous chaque solution (**Ma solution**, une fois le calcul fini ou arrêté, et **Meilleure solution
-connue**), le bouton **▶ Simuler sur les vraies routes** ouvre `/simulation` : les camions partent du
-dépôt à 8 h et roulent de client en client **dans l'ordre de la solution**, par les vraies routes,
-avec 10 minutes de livraison chez chaque client. Une animation folium (lecteur ▶, vitesse, curseur
-d'heure, bouton de couches) montre les camions avancer ; un tableau donne par camion la route
-réelle, le plan de l'instance, la conduite, la durée avec livraisons et l'heure de retour.
+connue**), le bouton **▶ Simuler sur les vraies routes** **reste sur la même page** (`?…&sim=mine|best#carte`) :
+la carte de la page est remplacée par une animation folium où les camions partent du dépôt à 8 h et
+roulent de client en client **dans l'ordre de la solution**, par les vraies routes, avec 10 minutes de
+livraison chez chaque client. Le lecteur ▶ (vitesse, curseur d'heure, bouton de couches) est dans la
+carte ; un tableau sous la carte donne par camion la route réelle, le plan de l'instance, la conduite,
+la durée avec livraisons et l'heure de retour. **Quitter la simulation** (bandeau ou bouton) ramène la carte
+habituelle ; « Afficher » avec une autre zone ou étendue relance la simulation à la nouvelle échelle ; un nouveau
+calcul l'arrête.
 
 - Ce n'est **pas exactement ce que la métaheuristique a calculé** : elle travaille sur les distances
   du plan de l'instance (points posés sur la carte par homothétie), la simulation utilise les routes
@@ -56,9 +59,9 @@ réelle, le plan de l'instance, la conduite, la durée avec livraisons et l'heur
 - Il faut Internet. Si OSRM ne répond pas, la page le dit ; si un trajet est introuvable (point en mer...),
   ce camion est tracé à vol d'oiseau avec un avertissement.
 - À l'échelle « France entière » les tournées de A-n32-k5 durent plus d'une journée. Pour des tournées
-  plus réalistes, réduire l'**Étendue** de la carte (environ 100 km pour ~8 h) puis relancer.
+  plus réalistes, réduire l'**Étendue** de la carte (environ 100 km pour des tournées de 2 à 10 h) puis cliquer sur Afficher.
 - Fichiers : `web/routing.py` (client OSRM), `web/simulation.py` (horaires le long du tracé et carte
-  animée), routes `/simulation` et `/simulation/map/<id>` dans `web/views.py`.
+  animée), `web/views.py` (paramètre `sim` de la page, et `/simulation/map/<id>` qui sert la carte animée).
 
 ## Remplacer l'affichage plus tard
 

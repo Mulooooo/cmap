@@ -5,6 +5,7 @@ ignoré par défaut, le fait : `OSRM_LIVE=1 pytest tests/test_simulation.py`.
 """
 
 import os
+import re
 
 import numpy as np
 import pytest
@@ -184,51 +185,80 @@ def site(fake, routing=None):
     return create_app(api=fake, routing=routing or StraightRouting()).test_client()
 
 
-def test_simulate_the_best_known_solution(fake):
+def page(client, url):
+    return client.get(url).get_data(as_text=True)
+
+
+def test_simulating_stays_on_the_same_page_and_replaces_its_map(fake):
     client = site(fake)
-    html = client.get("/simulation?instance=A-n32-k5&view=best").get_data(as_text=True)
-    assert "Meilleure solution connue" in html and "Résumé par camion" in html and "Route réelle" in html
-    assert "<script" not in html.lower() and "← Retour aux résultats" in html
-    src = html.split('src="/simulation/map/')[1].split('"')[0]
-    page = client.get(f"/simulation/map/{src}")
-    assert page.status_code == 200 and page.mimetype == "text/html" and "Camion 1" in page.get_data(as_text=True)
+    html = page(client, "/?instance=A-n32-k5&sim=best")
+    # c'est la même page : formulaire, boutons et résultats sont toujours là...
+    assert "▶ Calculer" in html and "Métaheuristique" in html and 'id="best"' in html and "Quitter la simulation" in html
+    # ...mais sa carte est maintenant la carte animée (une seule carte, pas l'ancienne)
+    assert html.count("<iframe") == 1 and 'src="/simulation/map/' in html and 'srcdoc="' not in html
+    assert "Résumé" not in html and "Simulation sur les vraies routes" in html and "Route réelle" in html
+    assert "<script" not in html.lower()
+    token = html.split('src="/simulation/map/')[1].split('"')[0]
+    animated = client.get(f"/simulation/map/{token}")
+    assert animated.status_code == 200 and animated.mimetype == "text/html" and "Camion 1" in animated.get_data(as_text=True)
+
+
+def test_there_is_no_separate_simulation_page_any_more(fake):
+    assert site(fake).get("/simulation?instance=A-n32-k5&view=best").status_code == 404
 
 
 def test_simulate_my_solution(fake):
     fake.job_state = job_state("done", result=RESULT)
-    html = site(fake).get("/simulation?instance=A-n32-k5&view=mine&job=j1").get_data(as_text=True)
-    assert "Ma solution (hill_climbing)" in html and "Résumé par camion" in html
+    html = page(site(fake), "/?instance=A-n32-k5&job=j1&sim=mine")
+    assert "Ma solution (Hill climbing)" in html and "Route réelle" in html and 'id="mine"' in html
+    assert 'name="sim" value="mine"' in html and 'name="job" value="j1"' in html  # le formulaire garde l'état
+
+
+def test_simulating_a_stopped_job_works_too(fake):
+    fake.job_state = job_state("stopped", result=RESULT)
+    assert "Route réelle" in page(site(fake), "/?instance=A-n32-k5&job=j1&sim=mine")
 
 
 def test_simulation_needs_a_finished_solution(fake):
     client = site(fake)
-    assert "abord un calcul" in client.get("/simulation?instance=A-n32-k5&view=mine").get_data(as_text=True)
+    html = page(client, "/?instance=A-n32-k5&sim=mine")  # pas de calcul
+    assert "abord un calcul" in html and "Route réelle" not in html and 'srcdoc="' in html  # la carte normale reste
     fake.job_state = job_state("running")
-    assert "pas terminé" in client.get("/simulation?instance=A-n32-k5&view=mine&job=j1").get_data(as_text=True)
+    html = page(client, "/?instance=A-n32-k5&job=j1&sim=mine")  # calcul en cours : pas de simulation
+    assert "Route réelle" not in html and "Calcul en cours" in html
     fake.job_state = None
-    assert "existe plus" in client.get("/simulation?instance=A-n32-k5&view=mine&job=perdu").get_data(as_text=True)
+    assert "existe plus" in page(client, "/?instance=A-n32-k5&job=perdu&sim=mine")
 
 
 def test_simulation_of_an_instance_without_best_known_solution(fake):
-    from test_web import INSTANCE as base
     import test_web
+    base = test_web.INSTANCE
     test_web.INSTANCE = {**base, "best_known": None}
     try:
-        html = site(fake).get("/simulation?instance=A-n32-k5&view=best").get_data(as_text=True)
+        html = page(site(fake), "/?instance=A-n32-k5&sim=best")
     finally:
         test_web.INSTANCE = base
-    assert "pas de meilleure solution connue" in html
+    assert "pas de meilleure solution connue" in html and 'srcdoc="' in html
 
 
-def test_page_when_the_routing_service_is_down(fake):
-    r = site(fake, DownRouting()).get("/simulation?instance=A-n32-k5&view=best")
-    html = r.get_data(as_text=True)
-    assert r.status_code == 200 and "ne répond pas" in html and "<iframe" not in html
+def test_routing_service_down_keeps_the_normal_page_with_a_message(fake):
+    html = page(site(fake, DownRouting()), "/?instance=A-n32-k5&sim=best")
+    assert "ne répond pas" in html and 'srcdoc="' in html and "Route réelle" not in html and "▶ Calculer" in html
 
 
-def test_page_warns_about_roads_that_cannot_be_found(fake):
-    html = site(fake, NoRouteRouting()).get("/simulation?instance=A-n32-k5&view=best").get_data(as_text=True)
-    assert "vol d'oiseau" in html and "Impossible de trouver une route" in html
+def test_roads_that_cannot_be_found_are_flagged(fake):
+    html = page(site(fake, NoRouteRouting()), "/?instance=A-n32-k5&sim=best")
+    assert "vol d'oiseau" in html and "Impossible de trouver une route" in html and "Route réelle" in html
+
+
+def test_long_tours_get_a_hint(fake):
+    class SlowRouting(StraightRouting):  # 20 h par étape
+        def route(self, points):
+            road = super().route(points)
+            return RoadRoute(road.coords, road.waypoints, [{"distance_m": 1e6, "duration_s": 72000.0} for _ in road.legs])
+
+    assert "plus de 12 h" in page(site(fake, SlowRouting()), "/?instance=A-n32-k5&sim=best")
+    assert "plus de 12 h" not in page(site(fake), "/?instance=A-n32-k5&sim=best")
 
 
 def test_unknown_or_expired_map_token(fake):
@@ -239,22 +269,43 @@ def test_only_the_last_maps_are_kept(fake):
     app = create_app(api=fake, routing=StraightRouting())
     client = app.test_client()
     for _ in range(10):
-        client.get("/simulation?instance=A-n32-k5&view=best")
+        client.get("/?instance=A-n32-k5&sim=best")
     assert len(app.extensions["sim_cache"]) == 8
 
 
-def test_results_page_offers_the_simulation(fake):
+def test_simulate_buttons_point_to_the_same_page(fake):
     client = site(fake)
-    html = client.get("/").get_data(as_text=True)
-    assert "Simuler sur les vraies routes" in html and "/simulation?" in html and "view=best" in html
-    assert "view=mine" not in html  # pas de calcul : rien de « mien » à simuler
+    html = page(client, "/")
+    assert "Simuler sur les vraies routes" in html and 'href="/?' in html and "sim=best" in html and "#carte" in html
+    assert "sim=mine" not in html  # pas de calcul : rien de « mien » à simuler
+    assert 'href="/simulation' not in html  # plus de page à part
 
     fake.job_state = job_state("done", result=RESULT)
-    html = client.get("/?job=j1").get_data(as_text=True)
-    assert html.count("Simuler sur les vraies routes") == 2 and "view=mine" in html and "job=j1" in html
+    html = page(client, "/?job=j1")
+    assert html.count("Simuler sur les vraies routes") == 2 and "sim=mine" in html and "job=j1" in html
 
     fake.job_state = job_state("running")
-    assert "Simuler sur les vraies routes" not in client.get("/?job=j1").get_data(as_text=True)
+    assert "Simuler sur les vraies routes" not in page(client, "/?job=j1")
+
+
+def test_the_simulated_solution_offers_to_quit_the_simulation(fake):
+    fake.job_state = job_state("done", result=RESULT)
+    html = page(site(fake), "/?instance=A-n32-k5&job=j1&sim=best")
+    assert html.count("Quitter la simulation") == 2  # le bandeau au-dessus de la carte, et le bouton de la solution simulée
+    assert html.count("Simuler sur les vraies routes") == 1  # l'autre solution reste simulable
+    links = re.findall(r'href="([^"]*)"[^>]*>(?:✕ )?Quitter la simulation', html)
+    assert len(links) == 2
+    assert all("sim=" not in u and "job=j1" in u and u.endswith("#carte") for u in links)
+
+
+def test_form_buttons_keep_or_drop_the_simulation(fake):
+    client = site(fake)
+    form = {"instance": "A-n32-k5", "zone": "Île-de-France", "span": "50", "solver": "hill_climbing",
+            "limit": "5", "seed": "0", "job": "", "sim": "best"}
+    r = client.post("/", data={**form, "action": "show"}, follow_redirects=False)
+    assert r.status_code == 303 and "sim=best" in r.headers["Location"]  # « Afficher » relance la simulation à la nouvelle échelle
+    r = client.post("/", data={**form, "action": "solve"}, follow_redirects=False)
+    assert r.status_code == 303 and "sim=" not in r.headers["Location"] and "job=j1" in r.headers["Location"]
 
 
 # ----------------------------------------------------------- vrai OSRM (facultatif)

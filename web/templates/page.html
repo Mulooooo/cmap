@@ -20,7 +20,9 @@
     {% else %}Solution invalide : {{ s.errors | join(' ; ') }}{% endif %}
   </div>
   {% endif %}
-  {% if sim_urls.get(id) %}
+  {% if sim_active == id %}
+  <p class="actions"><a class="btn" href="{{ sim_exit_url }}">✕ Quitter la simulation</a></p>
+  {% elif sim_urls.get(id) %}
   <p class="actions"><a class="btn primary" href="{{ sim_urls[id] }}">▶ Simuler sur les vraies routes</a></p>
   {% endif %}
   <div class="stats">
@@ -81,6 +83,7 @@
      qui parle ensuite au serveur de calcul. #}
   <form class="panel" method="post" action="/" enctype="multipart/form-data">
     {% if job %}<input type="hidden" name="job" value="{{ job }}">{% endif %}
+    {% if sim_active %}<input type="hidden" name="sim" value="{{ sim_active }}">{% endif %}
     <fieldset>
       <legend>Instance</legend>
       <label>Instances du serveur
@@ -102,7 +105,7 @@
         </select>
       </label>
       <label>Étendue (km)
-        <input type="number" name="span" min="5" max="3000" step="10" value="{{ span_input }}"
+        <input type="number" name="span" min="5" max="3000" step="any" value="{{ span_input }}"
                placeholder="{{ span_default }}">
       </label>
       <button type="submit" name="action" value="show" class="secondary">Afficher</button>
@@ -145,10 +148,69 @@
   </nav>
   {% endif %}
 
-  <div class="maps">
+  {% if sim %}
+  <div class="banner run" role="status">
+    Simulation : <b>{{ sim.title }}</b> · appuie sur ▶ en bas de la carte ·
+    <a href="{{ sim_exit_url }}">Quitter la simulation</a>
+  </div>
+  {% endif %}
+  <div class="maps" id="carte">
+    {% if sim %}
+    <iframe class="map map-main" title="Simulation des tournées sur les vraies routes" src="/simulation/map/{{ sim.token }}"></iframe>
+    {% else %}
     <iframe class="map map-main" title="Carte des tournées" srcdoc="{{ map_main }}"></iframe>
+    {% endif %}
     {% if tabs %}<iframe class="map map-best" title="Carte de la meilleure solution connue" srcdoc="{{ map_best }}"></iframe>{% endif %}
   </div>
+  {% if sim %}
+  <section class="results" id="simulation">
+    <h2>Simulation sur les vraies routes</h2>
+    <div class="banner info">
+      Les camions partent du dépôt à 8 h et suivent <b>l'ordre de la solution</b>, de client en client, par les
+      <b>vraies routes</b> (tracé, distances et durées d'OSRM / OpenStreetMap), avec {{ sim.service_min }} minutes de
+      livraison chez chaque client. Ce n'est pas exactement ce que la métaheuristique a calculé : elle travaille sur
+      les distances du plan de l'instance, ici ce sont les routes réelles.
+    </div>
+    {% if sim.long_tours %}
+    <div class="banner info">
+      Certaines tournées durent plus de 12 h : l'instance est étalée sur une grande zone. Pour des tournées plus
+      réalistes, réduis l'<b>étendue</b> de la carte (par exemple 100 km) puis clique sur Afficher.
+    </div>
+    {% endif %}
+    {% for w in sim.warnings %}<div class="banner bad">{{ w }}</div>{% endfor %}
+    <div class="tableWrap">
+      <table>
+        <thead>
+          <tr><th>Camion</th><th class="num">Clients</th><th class="num">Route réelle</th><th class="num">Plan de l'instance</th>
+              <th class="num">Conduite</th><th class="num">Avec livraisons</th><th class="num">Retour au dépôt</th></tr>
+        </thead>
+        <tbody>
+          {% for t in sim.trucks %}
+          <tr>
+            <td><span class="dot" style="background:{{ t.color }}"></span>{{ t.n }}{% if t.straight %} <small>(vol d'oiseau)</small>{% endif %}</td>
+            <td class="num">{{ t.clients }}</td>
+            <td class="num">{{ t.road_km | fr }} km</td>
+            <td class="num">{{ t.plan_km | fr }} km</td>
+            <td class="num">{{ t.drive_h | fr }} h</td>
+            <td class="num">{{ t.total_h | fr }} h</td>
+            <td class="num">{{ t.return }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+        <tfoot>
+          <tr><th>Total</th><th></th><th class="num">{{ sim.totals.road_km | fr }} km</th><th class="num">{{ sim.totals.plan_km | fr }} km</th>
+              <th></th><th></th><th class="num">{{ sim.totals.last_return }}</th></tr>
+        </tfoot>
+      </table>
+    </div>
+    <p class="note">
+      « Plan de l'instance » : la distance de la solution mise à l'échelle de la carte (les points de l'instance sont posés
+      par homothétie, ils ne correspondent pas à de vraies villes). L'écart avec « Route réelle » vient de là : les routes
+      ne sont pas des lignes droites. Itinéraires : <a href="https://project-osrm.org">OSRM</a>, données ©
+      <a href="https://www.openstreetmap.org/copyright">contributeurs OpenStreetMap</a>.
+    </p>
+  </section>
+  {% else %}
   <p class="note">
     Les points de l'instance sont posés sur la carte par homothétie (ils ne correspondent pas à de
     vraies villes) et les trajets sont tracés à vol d'oiseau. Échelle : 1 unité de distance =
@@ -157,6 +219,7 @@
     meilleure solution connue (en tirets) à la carte de ma solution.{% else %}Le bouton en haut à droite de
     la carte change le fond et masque des solutions ou des clients.{% endif %}
   </p>
+  {% endif %}
 
   {% if mine %}{{ solution('mine', 'Ma solution', mine) }}{% endif %}
   {% if best %}{{ solution('best', 'Meilleure solution connue', best) }}{% endif %}
