@@ -50,8 +50,13 @@ def build_map(inst: Instance, frame: MapFrame, layers: list[MapLayer]) -> str:
         location=[frame.center_lat, frame.center_lon], zoom_start=6, tiles=None,
         width="100%", height="100%", control_scale=True, zoom_control=True,
     )
-    # fonds de carte sans clé d'API (les fonds CartoDB de folium en exigent une désormais)
-    folium.TileLayer("OpenStreetMap", name="OpenStreetMap", show=True).add_to(m)
+    # Fonds de carte sans clé d'API. Pas de CartoDB (folium l'exige désormais) ni d'OpenStreetMap :
+    # ses serveurs refusent (403) les pages ouvertes depuis un fichier local, sans Referer.
+    folium.TileLayer(
+        ESRI.format(service="World_Street_Map"), name="Rues (Esri)", show=True,
+        attr="Tiles © Esri — Source: Esri, DeLorme, NAVTEQ, USGS, HERE, OpenStreetMap contributors",
+        max_zoom=19,
+    ).add_to(m)
     folium.TileLayer(
         ESRI.format(service="Canvas/World_Light_Gray_Base"), name="Gris clair (Esri)", show=False,
         attr="Tiles © Esri — Esri, DeLorme, NAVTEQ", max_zoom=16,

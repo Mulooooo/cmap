@@ -139,6 +139,15 @@ def test_page_shows_the_best_known_solution_by_default(inst):
     assert "Client 1 · demande 19" in html  # info-bulles des clients, dans la carte
 
 
+def test_basemaps_work_from_a_local_file(inst):
+    """OpenStreetMap répond 403 aux pages ouvertes en fichier local, CartoDB exige une clé : on
+    n'utilise que des fonds qui marchent sans clé ni Referer."""
+    html = build_page(inst)
+    assert "arcgisonline.com" in html  # fond par défaut : Esri
+    assert "openstreetmap.org" not in html.replace("OpenStreetMap contributors", "")
+    assert "cartocdn" not in html and "basemaps.cartocdn" not in html
+
+
 def test_page_has_no_script_of_its_own(inst):
     mine = solvers.SOLVERS[HILL](inst, 0.5, 0)
     html = build_page(inst, mine=mine)

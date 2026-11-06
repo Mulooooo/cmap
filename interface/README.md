@@ -35,7 +35,7 @@ Pendant le calcul, la progression s'affiche dans le terminal (pas en direct sur 
 
 ## Dans la page
 
-- Le bouton en haut à droite de la carte change le fond (OpenStreetMap, gris clair, satellite)
+- Le bouton en haut à droite de la carte change le fond (rues, gris clair, satellite, tous Esri)
   et affiche ou masque « Ma solution », « Meilleure solution connue » (en tirets) et les clients.
 - Survoler un client donne sa demande et son camion ; survoler un trajet donne sa charge et sa
   distance.
@@ -99,8 +99,9 @@ def mon_solveur(inst, time_limit, seed, on_progress=None):
   vol d'oiseau, pas sur le réseau routier.
 - Les distances sont arrondies à l'entier le plus proche pour `EUC_2D` (convention TSPLIB),
   sinon le gap ne serait pas comparable aux valeurs publiées (ex. A-n32-k5 : 784).
-- Les fonds de carte demandent Internet. Ceux de CARTO ne sont pas utilisés : folium les
-  charge maintenant avec une clé d'API obligatoire.
+- Les fonds de carte demandent Internet. Ni CARTO (folium exige désormais une clé d'API) ni
+  OpenStreetMap (ses serveurs peuvent refuser les pages ouvertes depuis un fichier local : erreur
+  403 « Access blocked ») ne sont utilisés ; les fonds viennent d'Esri.
 - La meilleure solution connue vient du fichier `.sol` du même nom, à côté du `.vrp`.
 
 ## Tests
