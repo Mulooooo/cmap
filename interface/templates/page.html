@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ inst.name }} · CMAP · Tournées de livraison</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🚚</text></svg>">
+  <style>{{ css | safe }}</style>
+</head>
+<body>
+{% macro solution(id, title, s) %}
+<section class="results" id="{{ id }}">
+  <h2>{{ title }}</h2>
+  <div class="banner {{ 'ok' if s.valid else 'bad' }}">
+    {% if s.valid %}Solution valide ({{ s.solver }})
+    {% else %}Solution invalide : {{ s.errors | join(' ; ') }}{% endif %}
+  </div>
+  <div class="stats">
+    <div class="stat"><b>{{ s.cost | fr }}</b><span>Coût total</span></div>
+    <div class="stat"><b>{{ s.km | fr }}</b><span>≈ km</span></div>
+    <div class="stat"><b>{{ s.n_routes }}</b><span>Camions utilisés</span></div>
+    {% if s.gap is not none %}
+    <div class="stat"><b>{{ s.gap | fr }} %</b><span>Gap vs meilleure connue</span></div>
+    {% endif %}
+    {% if s.elapsed %}<div class="stat"><b>{{ s.elapsed | fr }} s</b><span>Temps de calcul</span></div>{% endif %}
+  </div>
+
+  <div class="tableWrap">
+    <table>
+      <thead>
+        <tr><th>Camion</th><th>Itinéraire</th><th class="num">Clients</th><th>Charge</th>
+            <th class="num">Distance</th><th class="num">≈ km</th></tr>
+      </thead>
+      <tbody>
+        {% for r in s.rows %}
+        <tr>
+          <td><span class="dot" style="background:{{ r.color }}"></span>{{ r.n }}</td>
+          <td class="path">{{ r.path }}</td>
+          <td class="num">{{ r.clients }}</td>
+          <td><div class="load"><i><em style="width:{{ r.pct }}%"></em></i><span>{{ r.load }}/{{ inst.capacity }}</span></div></td>
+          <td class="num">{{ r.dist | fr }}</td>
+          <td class="num">{{ r.km | fr }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {% if s.chart %}
+  <h3>Convergence</h3>
+  <div class="chart">{{ s.chart | safe }}</div>
+  {% endif %}
+</section>
+{% endmacro %}
+
+<main>
+  <header class="top">
+    <div>
+      <p class="brand">CMAP · Tournées de livraison</p>
+      <h1>{{ inst.name }} <small>{{ inst.n - 1 }} clients</small></h1>
+    </div>
+    <div class="stats">
+      <div class="stat"><b>{{ inst.capacity }}</b><span>Capacité</span></div>
+      <div class="stat"><b>{{ inst.demand.sum() }}</b><span>Demande totale</span></div>
+      <div class="stat"><b>{{ inst.min_vehicles }}</b><span>Camions (min.)</span></div>
+      <div class="stat"><b>{{ inst.bks | fr if inst.bks else 'n/a' }}</b><span>Meilleure connue</span></div>
+    </div>
+  </header>
+
+  <ul class="settings" aria-label="Paramètres">
+    {% for label, value in settings.items() %}<li><span>{{ label }}</span> {{ value }}</li>{% endfor %}
+    <li><span>Généré le</span> {{ generated }}</li>
+  </ul>
+
+  {% if mine and best %}
+  <nav class="seg" aria-label="Aller à">
+    <a href="#mine">Ma solution</a>
+    <a href="#best">Meilleure solution connue</a>
+  </nav>
+  {% endif %}
+
+  <iframe class="map" title="Carte des tournées" srcdoc="{{ map_doc }}"></iframe>
+  <p class="note">
+    Les points de l'instance sont posés sur la carte par homothétie (ils ne correspondent pas à de
+    vraies villes) et les trajets sont tracés à vol d'oiseau. Échelle : 1 unité de distance =
+    {{ scale | fr }} km.
+    {% if mine and best %}Ma solution est en trait plein, la meilleure connue en tirets.{% endif %}
+    Le bouton en haut à droite de la carte change le fond et masque des solutions ou des clients.
+  </p>
+
+  {% if mine %}{{ solution('mine', 'Ma solution', mine) }}{% endif %}
+  {% if best %}{{ solution('best', 'Meilleure solution connue', best) }}{% endif %}
+  {% if not mine and not best %}
+  <p class="note">Aucune solution à afficher : lance un calcul avec <code>--solveur</code>.</p>
+  {% endif %}
+</main>
+</body>
+</html>

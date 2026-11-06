@@ -1,4 +1,4 @@
-fastapi
-uvicorn
+folium
+jinja2
 vrplib
 numpy

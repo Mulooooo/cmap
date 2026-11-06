@@ -52,9 +52,3 @@ def place_on_map(
     lat = center_lat + offset_km[:, 1] / KM_PER_DEG_LAT
     lon = center_lon + offset_km[:, 0] / (KM_PER_DEG_LAT * math.cos(math.radians(center_lat)))
     return MapFrame(lat, lon, km_per_unit, center_lat, center_lon, span_km)
-
-
-def zoom_for(span_km: float, center_lat: float, px: int = 650) -> float:
-    """Niveau de zoom (MapLibre, tuiles 512 px) pour afficher `span_km` dans `px` pixels."""
-    metres_per_px = span_km * 1000 * 1.15 / px  # 15 % de marge
-    return math.log2(78271.5 * math.cos(math.radians(center_lat)) / metres_per_px)
