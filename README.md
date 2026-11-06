@@ -8,8 +8,8 @@ uv pip install -r requirements.txt
 
 ``` bat
 uv venv .venv
-.venv/scripts/activate
+./.venv\scripts\activate
 uv venv --python 3.12
 uv pip install -r requirements.txt
-.venv/scripts/nbstripout --install
+.venv\scripts\nbstripout --install
 ```
