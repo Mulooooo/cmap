@@ -139,11 +139,15 @@ def test_the_page_has_no_javascript_of_its_own(client, fake):
     assert "<script" not in html.lower() and "onclick" not in html.lower()  # la carte est dans l'iframe srcdoc
 
 
-def test_running_job_reloads_every_second_and_shows_progress(client, fake):
+def test_running_job_never_reloads_by_itself_but_offers_a_refresh_button(client, fake):
+    """Un rechargement automatique fait clignoter la carte : l'utilisateur actualise lui-même."""
     fake.job_state = job_state("running")
     html = client.get("/?job=j1").get_data(as_text=True)
-    assert '<meta http-equiv="refresh" content="1">' in html
+    assert '<meta http-equiv="refresh"' not in html
     assert "■ Arrêter" in html and "Calcul en cours" in html and "meilleur coût 90" in html
+    assert "↻ Actualiser" in html and 'href="/?' in html and "job=j1" in html.split("↻ Actualiser")[0].rsplit('href="', 1)[1]
+    fake.job_state = job_state("done", result=RESULT)
+    assert "↻ Actualiser" not in client.get("/?job=j1").get_data(as_text=True)  # plus rien à actualiser
     assert 'id="mine"' in html and 'id="v-best"' not in html  # pas d'onglets avant la fin
 
 
@@ -309,13 +313,13 @@ def test_real_run_from_the_form_to_the_result_page(real):
     url = r.headers["Location"]
     time.sleep(0.5)
     running = site.get(url).get_data(as_text=True)
-    assert 'http-equiv="refresh"' in running and "Arrêter" in running
+    assert "Calcul en cours" in running and "Arrêter" in running and "Actualiser" in running
     # un 2e calcul pendant celui-là : refusé par le serveur de calcul, le site affiche le premier
     again = post(site, action="solve", limit="2").headers["Location"]
     assert "notice=busy" in again and again.split("job=")[1].split("&")[0] == url.split("job=")[1].split("&")[0]
 
     deadline = time.time() + 30
-    while time.time() < deadline and 'http-equiv="refresh"' in (page := site.get(url).get_data(as_text=True)):
+    while time.time() < deadline and "Calcul en cours" in (page := site.get(url).get_data(as_text=True)):
         time.sleep(0.3)
     assert "Solution valide (Hill climbing)" in page and 'id="mine"' in page and 'id="best"' in page
     assert "Convergence" in page and "Gap vs meilleure connue" in page

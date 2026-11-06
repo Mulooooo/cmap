@@ -30,8 +30,10 @@ python -m web         # 2) le site               -> http://127.0.0.1:5002
 | Résultats | carte, coût, gap, tableau par camion, courbe de convergence | `GET /api/jobs/<id>` |
 
 - La page affiche d'abord la **meilleure solution connue** de l'instance (fichier `.sol`).
-- Pendant un calcul, la page se recharge **toutes les secondes** (`<meta http-equiv="refresh">`) :
-  c'est le polling de `GET /api/jobs/<id>`. La carte suit la meilleure solution trouvée.
+- Pendant un calcul, la page **ne se recharge pas toute seule** (un rechargement automatique fait clignoter la
+  carte, et sans JavaScript on ne peut pas faire autrement). Le bandeau « Calcul en cours » a un bouton
+  **↻ Actualiser** : chaque clic relit l'état du calcul (`GET /api/jobs/<id>`) et redessine la carte avec la
+  meilleure solution trouvée. **■ Arrêter** garde la meilleure solution trouvée jusque-là.
 - Une fois le calcul fini, les onglets **Ma solution / Meilleure solution connue** (en CSS) changent
   la carte et le tableau ; le bouton de couches de la carte permet aussi de superposer les deux.
 - Un seul calcul à la fois : lancer un calcul pendant qu'un autre tourne affiche celui qui tourne.
@@ -42,7 +44,8 @@ python -m web         # 2) le site               -> http://127.0.0.1:5002
 Sous chaque solution (**Ma solution**, une fois le calcul fini ou arrêté, et **Meilleure solution
 connue**), le bouton **▶ Simuler sur les vraies routes** **reste sur la même page** (`?…&sim=mine|best#carte`) :
 la carte de la page est remplacée par une animation folium où les camions partent du dépôt à 8 h et
-roulent de client en client **dans l'ordre de la solution**, par les vraies routes, avec 10 minutes de
+roulent de client en client **dans l'ordre de la solution**, par les vraies routes (chaque camion est une icône
+camion de la couleur de sa tournée), avec 10 minutes de
 livraison chez chaque client. Le lecteur ▶ (vitesse, curseur d'heure, bouton de couches) est dans la
 carte ; un tableau sous la carte donne par camion la route réelle, le plan de l'instance, la conduite,
 la durée avec livraisons et l'heure de retour. **Quitter la simulation** (bandeau ou bouton) ramène la carte

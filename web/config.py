@@ -12,7 +12,6 @@ class Config:
     HOST = os.environ.get("HOST", "127.0.0.1")
     PORT = int(os.environ.get("PORT", "5002"))
 
-    REFRESH_SECONDS = 1  # pendant un calcul, la page se recharge toutes les secondes (polling)
     MAX_UPLOAD = 20 * 1024 * 1024
 
     # simulation sur les vraies routes (OSRM) ; pour un usage intensif, installer OSRM et changer l'adresse

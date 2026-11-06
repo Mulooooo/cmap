@@ -15,7 +15,7 @@ from test_web import INSTANCE, RESULT, FakeApi, job_state
 from web import create_app
 from web.geo import place_on_map
 from web.routing import OsrmClient, RoadRoute, RoutingError, RoutingUnavailable
-from web.simulation import build_simulation, build_timeline, clock, straight_route, waypoint_indices
+from web.simulation import build_simulation, build_timeline, clock, straight_route, truck_icon, waypoint_indices
 
 
 # ------------------------------------------------------------------------- outils
@@ -162,6 +162,25 @@ def test_simulation_map_has_one_truck_per_route():
     assert sim.trucks[0]["road_km"] == 3.0 and sim.trucks[0]["drive_s"] == 300
     assert sim.trucks[0]["total_s"] == 300 + 2 * 600  # 2 clients, 10 minutes chacun
     assert "timedimension" in sim.html.lower() and "Camion 1" in sim.html and "Client 3" in sim.html
+
+
+def test_trucks_move_on_the_map_not_dots():
+    sim = build_simulation(FRAME, [[1, 2], [3, 4]], StraightRouting())
+    assert '"icon": "marker"' in sim.html and '"icon": "circle"' not in sim.html  # le point mobile est une icône
+    assert sim.html.count("data:image/svg+xml") >= 2  # un camion par tournée
+    assert "%231f77b4" in sim.html and "%23ff7f0e" in sim.html  # chacun à la couleur de sa tournée
+
+
+def test_truck_icon_is_a_valid_coloured_svg():
+    import xml.etree.ElementTree as ET
+    from urllib.parse import unquote
+
+    icon = truck_icon("#2ca02c")
+    assert icon["iconUrl"].startswith("data:image/svg+xml;charset=utf-8,")
+    svg = unquote(icon["iconUrl"].split(",", 1)[1])
+    root = ET.fromstring(svg)  # du XML valide, sinon le navigateur n'affiche rien
+    assert root.tag.endswith("svg") and svg.count("#2ca02c") >= 2
+    assert icon["iconSize"] == [42, 42] and icon["iconAnchor"] == [21, 21]  # centré sur la position du camion
 
 
 def test_unreachable_points_fall_back_to_straight_lines_with_a_warning():

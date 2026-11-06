@@ -3,7 +3,6 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  {% if refresh %}<meta http-equiv="refresh" content="{{ refresh }}">{% endif %}
   <title>{% if inst %}{{ inst.name }} · {% endif %}CMAP · Tournées de livraison</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🚚</text></svg>">
   <style>{{ css | safe }}</style>
@@ -131,7 +130,12 @@
     </fieldset>
   </form>
   {% if error %}<div class="banner bad" role="alert">{{ error }}</div>{% endif %}
-  {% if banner %}<div class="banner run" role="status">{{ banner }}</div>{% endif %}
+  {% if banner %}
+  <div class="banner run" role="status">
+    <span>{{ banner }}</span>
+    {% if running %}<a class="btn" href="{{ refresh_url }}">↻ Actualiser</a>{% endif %}
+  </div>
+  {% endif %}
 
   {% if inst %}
   <ul class="settings" aria-label="Paramètres">

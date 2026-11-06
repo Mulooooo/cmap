@@ -142,3 +142,7 @@ tbody tr:hover { background: var(--field); }
 .btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
 tfoot th { border-top: 2px solid var(--line); border-bottom: 0; color: var(--ink); }
 .results .actions { margin: 12px 0 14px; }
+
+/* bandeau « calcul en cours » : le texte à gauche, le bouton Actualiser à droite */
+.banner.run { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.banner.run .btn { padding: 5px 12px; font-size: 13px; }

@@ -1,10 +1,12 @@
 """Les pages du site : un formulaire HTML et des pages générées côté serveur (aucun JavaScript).
 
-L'état de la page est dans l'URL (instance, zone, solveur, calcul en cours) ; pendant un calcul la
-page se recharge toute seule chaque seconde (<meta http-equiv="refresh">), ce qui est le « polling »
-de docs/api.md. Tout ce qui touche au serveur de calcul passe par `web.api_client.ApiClient`.
+L'état de la page est dans l'URL (instance, zone, solveur, calcul en cours, simulation). Sans
+JavaScript une page ne peut pas se mettre à jour sans se recharger, et un rechargement automatique
+fait clignoter la carte : pendant un calcul la page ne bouge donc pas toute seule, un bouton
+« Actualiser » relit l'état du calcul (un appel à `GET /api/jobs/<id>` à chaque clic).
+Tout ce qui touche au serveur de calcul passe par `web.api_client.ApiClient`.
 
-  GET  /    la page (paramètres : instance, zone, span, solver, limit, seed, job, view, notice)
+  GET  /    la page (paramètres : instance, zone, span, solver, limit, seed, job, sim, notice)
   POST /    le formulaire : action = show | solve | stop, fichier .vrp optionnel
 """
 
@@ -102,9 +104,9 @@ def render_page(params: dict, error: str | None = None, status: int = 200):
     seed = _num(params.get("seed"), 0, 0, 100000, int)
 
     ctx = {
-        "error": error or NOTICES.get(params.get("notice")), "api_ok": True, "refresh": None,
+        "error": error or NOTICES.get(params.get("notice")), "api_ok": True,
         "zones": list(PRESETS), "zone": zone, "span_input": span_typed, "span_default": int(span_default),
-        "limit": limit, "seed": seed, "solvers": [], "solver": params.get("solver"),
+        "limit": limit, "seed": seed, "solvers": [], "solver": params.get("solver"), "refresh_url": None,
         "instances": [], "instance_id": None, "inst": None, "job": None, "running": False, "banner": None,
         "settings": {}, "tabs": False, "map_main": None, "map_best": None, "mine": None, "best": None,
         "scale": None, "sim_urls": {}, "sim": None, "sim_active": None, "sim_exit_url": None,
@@ -186,8 +188,7 @@ def render_page(params: dict, error: str | None = None, status: int = 200):
                                  stats=route_stats(inst, job["routes"]), cost=job["best_cost"],
                                  elapsed=job["elapsed"], history=job["history"], km_per_unit=kpu, valid=True)
         ctx["settings"] = {"Solveur": solver_name, "Temps limite": f"{fr(job['time_limit'])} s", "Graine": str(job["seed"])}
-        if running:
-            ctx["refresh"] = cfg["REFRESH_SECONDS"]
+        if running:  # la page ne se recharge pas toute seule (ça clignote) : on propose « Actualiser »
             ctx["banner"] = (f"Calcul en cours… {fr(job['elapsed'])} s sur {fr(job['time_limit'])} s"
                              + (f" · meilleur coût {fr(job['best_cost'])}" if job["best_cost"] is not None else ""))
         elif job["status"] == "stopped":
@@ -225,6 +226,7 @@ def render_page(params: dict, error: str | None = None, status: int = 200):
         if best is not None:
             ctx["sim_urls"]["best"] = "/?" + urlencode({**base, "sim": "best"}) + "#carte"
     ctx["sim_exit_url"] = "/?" + urlencode(base) + "#carte"
+    ctx["refresh_url"] = "/?" + urlencode(base)
 
     sim_view = params.get("sim") if params.get("sim") in ("mine", "best") else None
     sim_routes = sim_title = None

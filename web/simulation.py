@@ -7,6 +7,7 @@ vraies routes, avec les vraies durées de trajet et un temps de livraison à cha
 
 import datetime as dt
 import math
+from urllib.parse import quote
 from dataclasses import dataclass, field
 
 import folium
@@ -98,6 +99,25 @@ def build_timeline(road: RoadRoute, service_s: float, step_m: float = SAMPLE_M) 
 DAYS = ["lun.", "mar.", "mer.", "jeu.", "ven.", "sam.", "dim."]
 
 
+def truck_icon(color: str) -> dict:
+    """Icône de camion (SVG) de la couleur de la tournée, au format `L.icon` de Leaflet.
+
+    Vu de face : un camion de face se lit de la même façon quel que soit le sens de la route."""
+    svg = (
+        '<svg xmlns="http://www.w3.org/2000/svg" width="42" height="42" viewBox="0 0 28 28">'
+        f'<rect x="3.5" y="1.5" width="21" height="12" rx="2" fill="{color}" stroke="#fff" stroke-width="1.6"/>'  # la caisse
+        f'<rect x="5.5" y="10.5" width="17" height="11.5" rx="2.5" fill="{color}" stroke="#fff" stroke-width="1.6"/>'  # la cabine
+        '<rect x="8" y="12.5" width="12" height="5" rx="1" fill="#dff1ff" stroke="#fff" stroke-width=".8"/>'  # le pare-brise
+        '<circle cx="9" cy="19.3" r="1.5" fill="#ffe27a"/><circle cx="19" cy="19.3" r="1.5" fill="#ffe27a"/>'  # les phares
+        '<rect x="5.5" y="22" width="17" height="2.6" rx="1" fill="#333" stroke="#fff" stroke-width=".8"/>'  # le pare-chocs
+        '<rect x="2.2" y="17.5" width="3.4" height="7" rx="1" fill="#222" stroke="#fff" stroke-width=".8"/>'  # les roues
+        '<rect x="22.4" y="17.5" width="3.4" height="7" rx="1" fill="#222" stroke="#fff" stroke-width=".8"/>'
+        "</svg>"
+    )
+    return {"iconUrl": "data:image/svg+xml;charset=utf-8," + quote(svg), "iconSize": [42, 42],
+            "iconAnchor": [21, 21], "popupAnchor": [0, -21]}
+
+
 def clock(seconds: float) -> str:
     """Heure d'horloge ; le jour est ajouté quand on a passé minuit (« mar. 10:33 »)."""
     t = START + dt.timedelta(seconds=seconds)
@@ -161,8 +181,8 @@ def build_simulation(frame: MapFrame, routes: list[list[int]], routing, service_
             "properties": {
                 "times": [_iso(t) for t, _, _ in tl.points],
                 "style": {"color": color, "weight": 5, "opacity": 0.95},
-                "icon": "circle",
-                "iconstyle": {"fillColor": color, "fillOpacity": 1, "stroke": "true", "color": "#ffffff", "radius": 8},
+                "icon": "marker",  # un camion, pas un point
+                "iconstyle": truck_icon(color),
                 "popup": f"Camion {k + 1}",
             },
         })
