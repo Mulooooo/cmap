@@ -72,20 +72,28 @@
     <li><span>Généré le</span> {{ generated }}</li>
   </ul>
 
-  {% if mine and best %}
-  <nav class="seg" aria-label="Aller à">
-    <a href="#mine">Ma solution</a>
-    <a href="#best">Meilleure solution connue</a>
+  {% set both = mine and best %}
+  {# Onglets en CSS pur : deux boutons radio cachés + des étiquettes (aucun JavaScript). #}
+  {% if both %}
+  <input type="radio" name="view" id="v-mine" class="vr" checked>
+  <input type="radio" name="view" id="v-best" class="vr">
+  <nav class="seg" aria-label="Solution affichée">
+    <label for="v-mine">Ma solution</label>
+    <label for="v-best">Meilleure solution connue</label>
   </nav>
   {% endif %}
 
-  <iframe class="map" title="Carte des tournées" srcdoc="{{ map_doc }}"></iframe>
+  <div class="maps">
+    <iframe class="map map-main" title="Carte des tournées" srcdoc="{{ map_main }}"></iframe>
+    {% if both %}<iframe class="map map-best" title="Carte de la meilleure solution connue" srcdoc="{{ map_best }}"></iframe>{% endif %}
+  </div>
   <p class="note">
     Les points de l'instance sont posés sur la carte par homothétie (ils ne correspondent pas à de
     vraies villes) et les trajets sont tracés à vol d'oiseau. Échelle : 1 unité de distance =
     {{ scale | fr }} km.
-    {% if mine and best %}Ma solution est en trait plein, la meilleure connue en tirets.{% endif %}
-    Le bouton en haut à droite de la carte change le fond et masque des solutions ou des clients.
+    {% if both %}Pour comparer sur une même carte, le bouton en haut à droite permet d'ajouter la
+    meilleure solution connue (en tirets) à la carte de ma solution.{% else %}Le bouton en haut à droite de
+    la carte change le fond et masque des solutions ou des clients.{% endif %}
   </p>
 
   {% if mine %}{{ solution('mine', 'Ma solution', mine) }}{% endif %}

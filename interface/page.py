@@ -76,19 +76,25 @@ def build_page(
     frame = place_on_map(inst.coords, lat0, lon0, span)
 
     best = solvers.make_solution(inst, inst.best_routes, "Meilleure solution connue") if inst.best_routes else None
+
+    # Carte principale : ma solution (+ la meilleure connue en tirets, masquée par défaut, que le
+    # bouton de couches permet d'ajouter) ou, sans calcul, la meilleure connue en trait plein.
     layers = []
     if mine is not None:
         layers.append(MapLayer(f"Ma solution ({mine.solver})", mine.routes))
     if best is not None:
         layers.append(MapLayer("Meilleure solution connue", best.routes, dashed=mine is not None,
                                show=mine is None))
+    # Seconde carte, pour l'onglet « Meilleure solution connue » (onglets en CSS, sans JavaScript).
+    best_layers = [MapLayer("Meilleure solution connue", best.routes)] if mine is not None and best else None
 
     shown = {"Zone": zone, "Étendue": f"{fr(span)} km", **(settings or {})}
     css = (TEMPLATES / "style.css").read_text(encoding="utf-8")
     return _env.get_template("page.html").render(
         css=css, inst=inst, scale=frame.km_per_unit, settings=shown,
         generated=dt.datetime.now().strftime("%d/%m/%Y à %H:%M"),
-        map_doc=build_map(inst, frame, layers),
+        map_main=build_map(inst, frame, layers),
+        map_best=build_map(inst, frame, best_layers) if best_layers else None,
         mine=solution_view(inst, mine, frame.km_per_unit) if mine is not None else None,
         best=solution_view(inst, best, frame.km_per_unit) if best is not None else None,
     )

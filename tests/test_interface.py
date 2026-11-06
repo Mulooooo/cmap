@@ -160,7 +160,8 @@ def test_page_compares_my_solution_with_the_best_known(inst):
     mine = solvers.SOLVERS[HILL](inst, 0.5, 0)
     html = build_page(inst, mine=mine, settings={"Solveur": HILL, "Graine": "0"})
     assert 'id="mine"' in html and 'id="best"' in html
-    assert 'href="#mine"' in html and 'href="#best"' in html
+    # onglets en CSS : deux cartes (la mienne, la meilleure connue) et deux boutons radio cachés
+    assert html.count('class="map map-') == 2 and 'id="v-mine"' in html and 'id="v-best"' in html
     assert "Gap vs meilleure connue" in html and "Convergence" in html
     assert HILL in html
 
