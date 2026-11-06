@@ -1,0 +1,4 @@
+pulp>=4.1
+vrplib>=2.2
+matplotlib>=3.9
+nbstripout>=0.9
