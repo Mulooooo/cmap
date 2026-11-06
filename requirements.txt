@@ -6,3 +6,5 @@ flask>=3.0
 flask-cors>=4.0
 numpy>=1.26
 pytest>=8.0
+folium>=0.17
+requests>=2.31
