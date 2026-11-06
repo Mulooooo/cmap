@@ -112,3 +112,23 @@ tbody tr:hover { background: var(--field); }
 @media (max-width: 720px) {
   main { padding: 18px 14px 40px; }
 }
+
+/* ---- panneau de commande (mode serveur) ---- */
+.panel { display: flex; flex-wrap: wrap; gap: 12px; align-items: stretch; margin: 20px 0 6px; }
+.panel fieldset { flex: 1 1 260px; margin: 0; padding: 12px 14px 14px; background: var(--panel);
+  border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow); }
+.panel legend { padding: 0 6px; font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+.panel label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 10px; }
+.panel select, .panel input[type=number], .panel input[type=file] {
+  display: block; width: 100%; margin-top: 4px; padding: 8px 10px; font: inherit; color: var(--ink);
+  background: var(--field); border: 1px solid var(--line); border-radius: 8px; }
+.panel input[type=file] { font-size: 13px; padding: 6px 8px; }
+.panel button { width: 100%; padding: 10px; font: inherit; font-weight: 600; cursor: pointer; border-radius: 8px; }
+.panel button.primary { border: 0; background: var(--accent); color: var(--accent-ink); }
+.panel button.primary:hover:not(:disabled) { filter: brightness(1.08); }
+.panel button.primary:disabled { opacity: .45; cursor: not-allowed; }
+.panel button.primary.stop { background: #d64545; color: #fff; }
+.panel button.secondary { background: var(--field); color: var(--ink); border: 1px solid var(--line); }
+.panel button.secondary:hover { border-color: var(--accent); }
+.banner.run { background: #e8f0fe; color: #1d4ed8; }
+@media (prefers-color-scheme: dark) { .banner.run { background: #16264a; color: #9dbaff; } }

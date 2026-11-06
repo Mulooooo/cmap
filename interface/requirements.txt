@@ -2,3 +2,6 @@ folium
 jinja2
 vrplib
 numpy
+fastapi
+uvicorn
+python-multipart

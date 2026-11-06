@@ -3,7 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{{ inst.name }} · CMAP · Tournées de livraison</title>
+  {% if running %}<meta http-equiv="refresh" content="3">{% endif %}
+  <title>{% if inst %}{{ inst.name }} · {% endif %}CMAP · Tournées de livraison</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🚚</text></svg>">
   <style>{{ css | safe }}</style>
 </head>
@@ -57,24 +58,80 @@
   <header class="top">
     <div>
       <p class="brand">CMAP · Tournées de livraison</p>
-      <h1>{{ inst.name }} <small>{{ inst.n - 1 }} clients</small></h1>
+      <h1>{% if inst %}{{ inst.name }} <small>{{ inst.n - 1 }} clients</small>{% else %}Choisis une instance{% endif %}</h1>
     </div>
+    {% if inst %}
     <div class="stats">
       <div class="stat"><b>{{ inst.capacity }}</b><span>Capacité</span></div>
       <div class="stat"><b>{{ inst.demand.sum() }}</b><span>Demande totale</span></div>
       <div class="stat"><b>{{ inst.min_vehicles }}</b><span>Camions (min.)</span></div>
       <div class="stat"><b>{{ inst.bks | fr if inst.bks else 'n/a' }}</b><span>Meilleure connue</span></div>
     </div>
+    {% endif %}
   </header>
 
+  {# Panneau de commande du mode serveur : un simple formulaire HTML, sans JavaScript. #}
+  {% if controls %}
+  <form class="panel" method="post" action="/" enctype="multipart/form-data">
+    {% if controls.job %}<input type="hidden" name="job" value="{{ controls.job }}">{% endif %}
+    <fieldset>
+      <legend>Instance</legend>
+      <label>Instances du dépôt
+        <select name="src">
+          {% for value, label in controls.sources %}
+          <option value="{{ value }}"{% if value == controls.src %} selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>… ou un fichier .vrp
+        <input type="file" name="file" accept=".vrp">
+      </label>
+    </fieldset>
+    <fieldset>
+      <legend>Carte</legend>
+      <label>Zone
+        <select name="zone">
+          {% for z in controls.zones %}<option{% if z == controls.zone %} selected{% endif %}>{{ z }}</option>{% endfor %}
+        </select>
+      </label>
+      <label>Étendue (km)
+        <input type="number" name="span" min="5" max="3000" step="10" value="{{ controls.span_input }}"
+               placeholder="{{ controls.span_default }}">
+      </label>
+      <button type="submit" name="action" value="show" class="secondary">Afficher</button>
+    </fieldset>
+    <fieldset>
+      <legend>Calcul</legend>
+      <label>Métaheuristique
+        <select name="solver">
+          {% for s in controls.solvers %}<option{% if s == controls.solver %} selected{% endif %}>{{ s }}</option>{% endfor %}
+        </select>
+      </label>
+      <label>Temps limite (s)
+        <input type="number" name="limit" min="1" max="300" step="1" value="{{ controls.limit }}">
+      </label>
+      <label>Graine
+        <input type="number" name="seed" min="0" max="100000" value="{{ controls.seed }}">
+      </label>
+      {% if running %}
+      <button type="submit" name="action" value="stop" class="primary stop">■ Arrêter</button>
+      {% else %}
+      <button type="submit" name="action" value="solve" class="primary"{% if not inst %} disabled{% endif %}>▶ Calculer</button>
+      {% endif %}
+    </fieldset>
+  </form>
+  {% if controls.error %}<div class="banner bad" role="alert">{{ controls.error }}</div>{% endif %}
+  {% if controls.banner %}<div class="banner run" role="status">{{ controls.banner }}</div>{% endif %}
+  {% endif %}
+
+  {% if inst %}
   <ul class="settings" aria-label="Paramètres">
     {% for label, value in settings.items() %}<li><span>{{ label }}</span> {{ value }}</li>{% endfor %}
     <li><span>Généré le</span> {{ generated }}</li>
   </ul>
 
-  {% set both = mine and best %}
   {# Onglets en CSS pur : deux boutons radio cachés + des étiquettes (aucun JavaScript). #}
-  {% if both %}
+  {% if tabs %}
   <input type="radio" name="view" id="v-mine" class="vr" checked>
   <input type="radio" name="view" id="v-best" class="vr">
   <nav class="seg" aria-label="Solution affichée">
@@ -85,21 +142,22 @@
 
   <div class="maps">
     <iframe class="map map-main" title="Carte des tournées" srcdoc="{{ map_main }}"></iframe>
-    {% if both %}<iframe class="map map-best" title="Carte de la meilleure solution connue" srcdoc="{{ map_best }}"></iframe>{% endif %}
+    {% if tabs %}<iframe class="map map-best" title="Carte de la meilleure solution connue" srcdoc="{{ map_best }}"></iframe>{% endif %}
   </div>
   <p class="note">
     Les points de l'instance sont posés sur la carte par homothétie (ils ne correspondent pas à de
     vraies villes) et les trajets sont tracés à vol d'oiseau. Échelle : 1 unité de distance =
     {{ scale | fr }} km.
-    {% if both %}Pour comparer sur une même carte, le bouton en haut à droite permet d'ajouter la
+    {% if tabs %}Pour comparer sur une même carte, le bouton en haut à droite permet d'ajouter la
     meilleure solution connue (en tirets) à la carte de ma solution.{% else %}Le bouton en haut à droite de
     la carte change le fond et masque des solutions ou des clients.{% endif %}
   </p>
 
   {% if mine %}{{ solution('mine', 'Ma solution', mine) }}{% endif %}
   {% if best %}{{ solution('best', 'Meilleure solution connue', best) }}{% endif %}
-  {% if not mine and not best %}
-  <p class="note">Aucune solution à afficher : lance un calcul avec <code>--solveur</code>.</p>
+  {% if not mine and not best and not running %}
+  <p class="note">Aucune solution à afficher : lance un calcul.</p>
+  {% endif %}
   {% endif %}
 </main>
 </body>

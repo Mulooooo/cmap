@@ -1,12 +1,14 @@
-"""Génère la page HTML d'une instance et l'ouvre dans le navigateur (pas de serveur).
+"""Visualisation des tournées : page HTML avec carte folium.
 
-    python -m interface instances/A/A-n32-k5.vrp                       meilleure solution connue
-    python -m interface instances/A/A-n32-k5.vrp --solveur recuit      + calcul avec un solveur
+    python -m interface --serveur                                      page avec boutons (calcul en direct)
+    python -m interface instances/A/A-n32-k5.vrp                       fichier HTML : meilleure solution connue
+    python -m interface instances/A/A-n32-k5.vrp --solveur recuit      fichier HTML + calcul avec un solveur
     python -m interface --solveurs                                     liste des solveurs
 """
 
 import argparse
 import sys
+import threading
 import time
 import webbrowser
 from pathlib import Path
@@ -31,6 +33,19 @@ def choose_solver(query: str) -> str:
     sys.exit(f"{detail} : {query!r}. Au choix : " + " ; ".join(names))
 
 
+def serve(port: int, open_browser: bool = True) -> None:
+    """Page avec boutons : un petit serveur local (uvicorn) sur 127.0.0.1."""
+    try:
+        import uvicorn
+    except ImportError:
+        sys.exit("Le mode --serveur demande : pip install fastapi uvicorn python-multipart")
+    url = f"http://127.0.0.1:{port}"
+    print(f"Page : {url}   (Ctrl+C pour arrêter)")
+    if open_browser:
+        threading.Timer(1.0, lambda: webbrowser.open(url)).start()
+    uvicorn.run("interface.server:app", host="127.0.0.1", port=port, log_level="warning")
+
+
 def main(argv=None) -> None:
     ap = argparse.ArgumentParser(
         prog="python -m interface",
@@ -46,11 +61,16 @@ def main(argv=None) -> None:
     ap.add_argument("--sortie", help="fichier HTML à écrire (défaut : sortie/<instance>.html)")
     ap.add_argument("--sans-ouvrir", action="store_true", help="ne pas ouvrir la page dans le navigateur")
     ap.add_argument("--solveurs", action="store_true", help="affiche la liste des solveurs et quitte")
+    ap.add_argument("--serveur", action="store_true",
+                    help="lance un petit serveur local : la page a un menu de solveurs et un bouton Calculer")
+    ap.add_argument("--port", type=int, default=8000, help="port du serveur (défaut : 8000)")
     args = ap.parse_args(argv)
 
     if args.solveurs:
         print("\n".join(solvers.SOLVERS))
         return
+    if args.serveur:
+        return serve(args.port, open_browser=not args.sans_ouvrir)
     if not args.instance:
         ap.error("indique un fichier .vrp (ou --solveurs)")
     path = Path(args.instance).expanduser()

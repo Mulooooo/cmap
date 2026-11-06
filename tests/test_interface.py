@@ -1,4 +1,5 @@
 import math
+import time
 from pathlib import Path
 
 import numpy as np
@@ -228,3 +229,101 @@ def test_choose_solver():
     assert choose_solver(HILL) == HILL
     with pytest.raises(SystemExit):
         choose_solver("(notebook)")  # ambigu : correspond aux deux
+
+
+# ------------------------------------------------------------------------ serveur
+@pytest.fixture(scope="module")
+def client():
+    from fastapi.testclient import TestClient
+
+    from interface.server import app
+
+    return TestClient(app)
+
+
+def _solve(client, solver=HILL, limit="2", src="lib:A/A-n32-k5.vrp"):
+    r = client.post("/", data={"action": "solve", "src": src, "solver": solver, "limit": limit,
+                               "seed": "0", "zone": "France entière"}, follow_redirects=False)
+    assert r.status_code == 303 and "job=" in r.headers["location"]
+    return r.headers["location"]
+
+
+def _wait_until_finished(client, url, timeout=20):
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        page = client.get(url).text
+        if 'http-equiv="refresh"' not in page:
+            return page
+        time.sleep(0.3)
+    raise AssertionError("le calcul ne se termine pas")
+
+
+def test_server_home_has_the_controls(client):
+    html = client.get("/").text
+    assert "<form" in html and "▶ Calculer" in html and "Métaheuristique" in html
+    assert HILL in html and RECUIT in html  # menu des solveurs
+    assert "lib:A/A-n32-k5.vrp" in html and "Meilleure solution connue" in html
+    assert "<script" not in html.lower()
+
+
+def test_server_solve_runs_then_shows_both_solutions(client):
+    url = _solve(client)
+    running = client.get(url).text
+    assert 'http-equiv="refresh"' in running and "Arrêter" in running  # page qui se recharge seule
+    done = _wait_until_finished(client, url)
+    assert "Solution valide (Hill climbing (notebook))" in done
+    assert 'id="mine"' in done and 'id="best"' in done and 'id="v-best"' in done  # onglets
+    assert "Gap vs meilleure connue" in done and "▶ Calculer" in done
+
+
+def test_server_stop_keeps_the_best_solution_so_far(client):
+    url = _solve(client, limit="60")
+    time.sleep(0.5)
+    job = url.split("job=")[1].split("&")[0]
+    r = client.post("/", data={"action": "stop", "src": "lib:A/A-n32-k5.vrp", "job": job,
+                               "solver": HILL, "limit": "60", "seed": "0"}, follow_redirects=False)
+    assert r.status_code == 303
+    page = client.get(r.headers["location"]).text
+    assert "Calcul arrêté" in page and 'http-equiv="refresh"' not in page
+    assert 'id="mine"' in page
+
+
+def test_server_upload_a_vrp_file(client):
+    r = client.post("/", data={"action": "show", "zone": "France entière"},
+                    files={"file": ("x.vrp", A32.read_bytes())}, follow_redirects=False)
+    assert r.status_code == 303 and "src=up%3A" in r.headers["location"]
+    page = client.get(r.headers["location"]).text
+    assert "(fichier téléversé)" in page and 'id="best"' not in page  # pas de .sol à côté
+    # on peut calculer sur ce fichier
+    src = r.headers["location"].split("src=")[1].split("&")[0].replace("%3A", ":")
+    assert "Solution valide" in _wait_until_finished(client, _solve(client, src=src))
+
+
+def test_server_rejects_a_bad_file(client):
+    r = client.post("/", data={"action": "show"}, files={"file": ("bad.vrp", b"pas un vrp")})
+    assert r.status_code == 400 and "illisible" in r.text
+    assert "lib:A/A-n32-k5.vrp" in r.text  # la page reste utilisable
+
+
+def test_server_only_serves_listed_instances(client):
+    for src in ("lib:../../etc/passwd", "lib:interface/server.py", "up:inconnu", "n'importe quoi"):
+        r = client.get("/", params={"src": src})
+        assert r.status_code == 200 and "introuvable" in r.text
+        assert "A-n32-k5" in r.text  # retombe sur la première instance du dépôt
+
+
+def test_server_shows_a_solver_crash(client):
+    @solvers.register("test-solveur-qui-plante")
+    def broken(inst, time_limit, seed, on_progress=None):
+        raise RuntimeError("boum")
+
+    try:
+        page = _wait_until_finished(client, _solve(client, solver="test-solveur-qui-plante"))
+        assert "Erreur du solveur" in page and "RuntimeError: boum" in page
+    finally:
+        del solvers.SOLVERS["test-solveur-qui-plante"]
+
+
+def test_server_ignores_silly_parameters(client):
+    r = client.get("/", params={"limit": "abc", "seed": "-5", "span": "xyz", "zone": "Mars"})
+    assert r.status_code == 200 and "France entière" in r.text

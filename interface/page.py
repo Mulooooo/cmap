@@ -1,7 +1,13 @@
 """Génère la page HTML d'une instance : carte folium + tableaux + courbe de convergence.
 
-La page est un fichier unique et autonome (styles et carte inclus), sans serveur et sans
-JavaScript écrit à la main : seuls les scripts de folium/Leaflet font marcher la carte.
+Deux usages :
+  - fichier statique et autonome (styles et carte inclus), ouvert dans le navigateur :
+    `python -m interface instance.vrp`, ou depuis un notebook avec `build_page` / `write_page` ;
+  - page servie par `interface/server.py`, avec un panneau de commande (instance, solveur,
+    « Calculer ») : on passe alors `controls`.
+
+Aucun JavaScript n'est écrit à la main : seuls les scripts de folium/Leaflet font marcher la
+carte ; les onglets « Ma solution / Meilleure solution connue » sont en CSS pur.
 
 Depuis un notebook :
 
@@ -56,21 +62,32 @@ def solution_view(inst: Instance, sol: solvers.Solution, km_per_unit: float) -> 
 
 
 def build_page(
-    inst: Instance,
+    inst: Instance | None,
     mine: solvers.Solution | None = None,
     zone: str = "France entière",
     span: float | None = None,
     settings: dict[str, str] | None = None,
+    controls: dict | None = None,
+    running: bool = False,
 ) -> str:
     """Page HTML de l'instance.
 
     - `mine` : solution calculée (tracée en trait plein) ;
-    - la meilleure solution connue (fichier .sol voisin), si elle existe, est tracée en tirets ;
+    - la meilleure solution connue (fichier .sol voisin), si elle existe, est tracée en tirets
+      sur la carte de ma solution, et a sa propre carte dans l'onglet « Meilleure solution connue » ;
     - `zone` / `span` : où poser l'instance sur la carte (cf. `interface.geo.PRESETS`) ;
-    - `settings` : paramètres du calcul à rappeler en haut de page (libellé -> valeur).
+    - `settings` : paramètres du calcul à rappeler en haut de page (libellé -> valeur) ;
+    - `controls` : panneau de commande du mode serveur (formulaire), sinon page statique ;
+    - `running` : calcul en cours, la page se recharge toute seule (mode serveur).
     """
     if zone not in PRESETS:
         raise ValueError(f"Zone inconnue : {zone!r} (au choix : {', '.join(PRESETS)})")
+    css = (TEMPLATES / "style.css").read_text(encoding="utf-8")
+    base = dict(css=css, controls=controls, running=running,
+                generated=dt.datetime.now().strftime("%d/%m/%Y à %H:%M"))
+    if inst is None:  # pas d'instance (mode serveur, rien de chargé) : seulement le panneau
+        return _env.get_template("page.html").render(inst=None, settings={}, **base)
+
     lat0, lon0, span_default = PRESETS[zone]
     span = span or span_default
     frame = place_on_map(inst.coords, lat0, lon0, span)
@@ -85,18 +102,20 @@ def build_page(
     if best is not None:
         layers.append(MapLayer("Meilleure solution connue", best.routes, dashed=mine is not None,
                                show=mine is None))
-    # Seconde carte, pour l'onglet « Meilleure solution connue » (onglets en CSS, sans JavaScript).
-    best_layers = [MapLayer("Meilleure solution connue", best.routes)] if mine is not None and best else None
+    # Pendant un calcul on ne montre que la solution en cours ; sinon, une seconde carte pour
+    # l'onglet « Meilleure solution connue » (onglets en CSS, sans JavaScript).
+    tabs = mine is not None and best is not None and not running
+    best_layers = [MapLayer("Meilleure solution connue", best.routes)] if tabs else None
 
     shown = {"Zone": zone, "Étendue": f"{fr(span)} km", **(settings or {})}
-    css = (TEMPLATES / "style.css").read_text(encoding="utf-8")
     return _env.get_template("page.html").render(
-        css=css, inst=inst, scale=frame.km_per_unit, settings=shown,
-        generated=dt.datetime.now().strftime("%d/%m/%Y à %H:%M"),
+        inst=inst, scale=frame.km_per_unit, settings=shown,
         map_main=build_map(inst, frame, layers),
         map_best=build_map(inst, frame, best_layers) if best_layers else None,
+        tabs=tabs,
         mine=solution_view(inst, mine, frame.km_per_unit) if mine is not None else None,
-        best=solution_view(inst, best, frame.km_per_unit) if best is not None else None,
+        best=solution_view(inst, best, frame.km_per_unit) if best is not None and not running else None,
+        **base,
     )
 
 
