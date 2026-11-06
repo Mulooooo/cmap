@@ -3,7 +3,24 @@
 Le serveur charge des instances VRPLIB et lance une métaheuristique Python choisie par son
 nom. Le site lui parle en HTTP avec du JSON.
 
-> Statut : **proposition à valider par l'équipe**, avant de coder les routes.
+> Statut : première version **implémentée** (dossier `server/`) et testée ; le contrat reste à
+> valider par l'équipe.
+
+## Lancer le serveur
+
+```bash
+uv venv --python 3.12 && source .venv/bin/activate     # comme dans le README
+uv pip install -r requirements.txt
+python -m server                                       # http://127.0.0.1:5001/api/health
+pytest                                                 # les tests (une vingtaine de secondes)
+```
+
+- Le port par défaut est **5001** (`--port` ou la variable `PORT`) : sur macOS le port 5000 est
+  pris par le récepteur AirPlay.
+- Le serveur n'écoute que sur `127.0.0.1` (`--host` ou `HOST` pour changer).
+- `CORS_ORIGINS="http://localhost:5173,http://monsite.local"` autorise le site à appeler l'API
+  depuis une autre adresse (désactivé par défaut).
+- Les métaheuristiques sont dans `solvers/` ; pour en ajouter une, voir `solvers/__init__.py`.
 
 ## Principes
 
@@ -37,6 +54,7 @@ Toutes les erreurs ont le même format, avec le bon code HTTP :
 |---|---|---|
 | 400 | `invalid_file` | fichier `.vrp` absent, illisible ou qui n'est pas un CVRP |
 | 404 | `not_found` | instance, solveur ou calcul inconnu |
+| 405 | `method_not_allowed` | mauvaise méthode HTTP sur une route qui existe |
 | 409 | `busy` | un calcul est déjà en cours (la réponse contient son `job_id`) |
 | 413 | `too_large` | fichier envoyé de plus de 20 Mo |
 | 422 | `invalid_param` | paramètre manquant ou hors limites (la réponse contient `field`) |
@@ -119,7 +137,7 @@ Réponse abrégée (`coords` et `demand` ont une entrée par sommet, dépôt com
 Envoi d'un fichier `.vrp` en `multipart/form-data`, champ **`file`** (20 Mo maximum) :
 
 ```bash
-curl -F file=@A-n32-k5.vrp http://127.0.0.1:5000/api/instances
+curl -F file=@A-n32-k5.vrp http://127.0.0.1:5001/api/instances
 ```
 
 Réponse `201` : le même JSON que `GET /api/instances/<id>`, avec `"source": "upload"` et un
@@ -181,7 +199,7 @@ L'état du calcul. À appeler **toutes les secondes** tant que `status` vaut `ru
 | Champ | Sens |
 |---|---|
 | `status` | `running`, `done` (le solveur a fini), `stopped` (arrêté avec `/stop`), `error` |
-| `elapsed` | temps écoulé depuis le lancement |
+| `elapsed` | temps écoulé depuis le lancement, **démarrage du processus compris** (environ 1 s de plus que le `time_limit`) ; `result.elapsed` est le temps du seul solveur |
 | `best_cost` | coût de la meilleure solution trouvée jusque-là |
 | `version` | nombre qui augmente à chaque amélioration : s'il n'a pas changé, rien de nouveau à redessiner |
 | `routes` | tournées de la meilleure solution trouvée jusque-là |
@@ -232,16 +250,16 @@ est déjà fini (on renvoie son état tel quel).
 ## Exemple complet
 
 ```bash
-curl http://127.0.0.1:5000/api/solvers
-curl http://127.0.0.1:5000/api/instances
-curl http://127.0.0.1:5000/api/instances/A-n32-k5
+curl http://127.0.0.1:5001/api/solvers
+curl http://127.0.0.1:5001/api/instances
+curl http://127.0.0.1:5001/api/instances/A-n32-k5
 
-curl -X POST http://127.0.0.1:5000/api/jobs -H 'Content-Type: application/json' \
+curl -X POST http://127.0.0.1:5001/api/jobs -H 'Content-Type: application/json' \
      -d '{"instance_id": "A-n32-k5", "solver": "hill_climbing", "time_limit": 10, "seed": 0}'
 # -> {"job_id": "9f2c4a7b1e03", "status": "running"}
 
-curl http://127.0.0.1:5000/api/jobs/9f2c4a7b1e03          # à répéter chaque seconde
-curl -X POST http://127.0.0.1:5000/api/jobs/9f2c4a7b1e03/stop
+curl http://127.0.0.1:5001/api/jobs/9f2c4a7b1e03          # à répéter chaque seconde
+curl -X POST http://127.0.0.1:5001/api/jobs/9f2c4a7b1e03/stop
 ```
 
 ## Pas dans cette version

@@ -2,3 +2,7 @@ pulp>=4.1
 vrplib>=2.2
 matplotlib>=3.9
 nbstripout>=0.9
+flask>=3.0
+flask-cors>=4.0
+numpy>=1.26
+pytest>=8.0
