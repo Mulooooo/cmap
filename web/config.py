@@ -14,3 +14,8 @@ class Config:
 
     REFRESH_SECONDS = 1  # pendant un calcul, la page se recharge toutes les secondes (polling)
     MAX_UPLOAD = 20 * 1024 * 1024
+
+    # simulation sur les vraies routes (OSRM) ; pour un usage intensif, installer OSRM et changer l'adresse
+    OSRM_URL = os.environ.get("OSRM_URL", "https://router.project-osrm.org")
+    OSRM_TIMEOUT = float(os.environ.get("OSRM_TIMEOUT", "25"))
+    SERVICE_SECONDS = 600  # temps passé chez chaque client pour livrer (10 minutes)

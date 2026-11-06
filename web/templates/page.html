@@ -20,6 +20,9 @@
     {% else %}Solution invalide : {{ s.errors | join(' ; ') }}{% endif %}
   </div>
   {% endif %}
+  {% if sim_urls.get(id) %}
+  <p class="actions"><a class="btn primary" href="{{ sim_urls[id] }}">▶ Simuler sur les vraies routes</a></p>
+  {% endif %}
   <div class="stats">
     <div class="stat"><b>{{ s.cost | fr }}</b><span>Coût total</span></div>
     <div class="stat"><b>{{ s.km | fr }}</b><span>≈ km</span></div>

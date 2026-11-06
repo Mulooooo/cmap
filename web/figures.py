@@ -38,18 +38,9 @@ class MapLayer:
     show: bool = True
 
 
-def build_map(frame: MapFrame, demand: list[int], capacity: int, layers: list[MapLayer]) -> str:
-    """Page HTML complète d'une carte folium (à mettre dans un iframe `srcdoc`).
-
-    Sans couche, on ne montre que les clients et le dépôt. Les clients sont colorés selon la
-    première couche affichée par défaut.
-    """
-    m = folium.Map(
-        location=[frame.center_lat, frame.center_lon], zoom_start=6, tiles=None,
-        width="100%", height="100%", control_scale=True, zoom_control=True,
-    )
-    # Fonds de carte sans clé d'API. Pas de CartoDB (folium l'exige désormais) ni d'OpenStreetMap :
-    # ses serveurs refusent (403) les pages ouvertes sans Referer.
+def add_basemaps(m: folium.Map) -> None:
+    """Fonds de carte sans clé d'API. Pas de CartoDB (folium l'exige désormais) ni d'OpenStreetMap :
+    ses serveurs refusent (403) les pages ouvertes sans Referer."""
     folium.TileLayer(
         ESRI.format(service="World_Street_Map"), name="Rues (Esri)", show=True,
         attr="Tiles © Esri — Source: Esri, DeLorme, NAVTEQ, USGS, HERE, OpenStreetMap contributors",
@@ -63,6 +54,19 @@ def build_map(frame: MapFrame, demand: list[int], capacity: int, layers: list[Ma
         ESRI.format(service="World_Imagery"), name="Satellite (Esri)", show=False,
         attr="Tiles © Esri — Source: Esri, Maxar, Earthstar Geographics", max_zoom=18,
     ).add_to(m)
+
+
+def build_map(frame: MapFrame, demand: list[int], capacity: int, layers: list[MapLayer]) -> str:
+    """Page HTML complète d'une carte folium (à mettre dans un iframe `srcdoc`).
+
+    Sans couche, on ne montre que les clients et le dépôt. Les clients sont colorés selon la
+    première couche affichée par défaut.
+    """
+    m = folium.Map(
+        location=[frame.center_lat, frame.center_lon], zoom_start=6, tiles=None,
+        width="100%", height="100%", control_scale=True, zoom_control=True,
+    )
+    add_basemaps(m)
 
     def pt(i):
         return float(frame.lat[i]), float(frame.lon[i])

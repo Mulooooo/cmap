@@ -134,3 +134,12 @@ tbody tr:hover { background: var(--field); }
 @media (prefers-color-scheme: dark) { .banner.run { background: #16264a; color: #9dbaff; } }
 
 .banner.info { background: var(--field); color: var(--muted); font-weight: 400; }
+
+/* ---- simulation et boutons-liens ---- */
+.btn { display: inline-block; padding: 8px 16px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel);
+  color: var(--ink); text-decoration: none; font-size: 13.5px; font-weight: 600; }
+.btn:hover { border-color: var(--accent); }
+.btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.map.sim { position: static; height: clamp(480px, 70vh, 820px); margin: 12px 0 4px; }
+tfoot th { border-top: 2px solid var(--line); border-bottom: 0; color: var(--ink); }
+.results .actions { margin: 12px 0 14px; }

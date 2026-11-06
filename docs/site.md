@@ -37,6 +37,29 @@ python -m web         # 2) le site               -> http://127.0.0.1:5002
 - Un seul calcul à la fois : lancer un calcul pendant qu'un autre tourne affiche celui qui tourne.
 - L'état de la page est dans l'URL (`?instance=…&zone=…&solver=…&job=…`) : on peut la copier.
 
+## Simulation sur les vraies routes
+
+Sous chaque solution (**Ma solution**, une fois le calcul fini ou arrêté, et **Meilleure solution
+connue**), le bouton **▶ Simuler sur les vraies routes** ouvre `/simulation` : les camions partent du
+dépôt à 8 h et roulent de client en client **dans l'ordre de la solution**, par les vraies routes,
+avec 10 minutes de livraison chez chaque client. Une animation folium (lecteur ▶, vitesse, curseur
+d'heure, bouton de couches) montre les camions avancer ; un tableau donne par camion la route
+réelle, le plan de l'instance, la conduite, la durée avec livraisons et l'heure de retour.
+
+- Ce n'est **pas exactement ce que la métaheuristique a calculé** : elle travaille sur les distances
+  du plan de l'instance (points posés sur la carte par homothétie), la simulation utilise les routes
+  réelles, donc les distances et les durées sont différentes. Seul l'ordre des tournées est repris.
+- Les itinéraires viennent d'**OSRM** (données OpenStreetMap), appelé depuis le site (`web/routing.py`) :
+  une requête par camion, espacées d'au moins 1,1 s (le serveur public est un service de démonstration,
+  il limite le débit). Compter ~1 s par camion la première fois ; les réponses sont gardées en mémoire.
+  `OSRM_URL` permet d'utiliser un OSRM installé sur la machine.
+- Il faut Internet. Si OSRM ne répond pas, la page le dit ; si un trajet est introuvable (point en mer...),
+  ce camion est tracé à vol d'oiseau avec un avertissement.
+- À l'échelle « France entière » les tournées de A-n32-k5 durent plus d'une journée. Pour des tournées
+  plus réalistes, réduire l'**Étendue** de la carte (environ 100 km pour ~8 h) puis relancer.
+- Fichiers : `web/routing.py` (client OSRM), `web/simulation.py` (horaires le long du tracé et carte
+  animée), routes `/simulation` et `/simulation/map/<id>` dans `web/views.py`.
+
 ## Remplacer l'affichage plus tard
 
 Le front est volontairement mince et **isolé du reste** :
@@ -45,7 +68,7 @@ Le front est volontairement mince et **isolé du reste** :
 |---|---|---|
 | `web/api_client.py` | **le seul fichier qui parle au serveur de calcul** (une méthode par route de l'API) | non, à réutiliser |
 | `web/views.py` | routes du site, calcul des chiffres affichés | en partie |
-| `web/figures.py`, `web/geo.py` | cartes folium, courbe SVG, placement des points | selon la techno de carte |
+| `web/figures.py`, `web/geo.py`, `web/simulation.py`, `web/routing.py` | cartes folium, courbe SVG, placement des points, simulation sur les routes (OSRM) | selon la techno de carte |
 | `web/templates/` | HTML et CSS | oui |
 
 Le serveur de calcul n'a rien à changer : un autre front (React, Vue, autre) n'a qu'à appeler les
