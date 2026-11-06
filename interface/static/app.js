@@ -86,16 +86,17 @@ function ensureLayers() {
   map.addLayer({ id: "clients", type: "circle", source: "clients",
     paint: { "circle-radius": ["get", "r"], "circle-color": ["get", "color"],
              "circle-stroke-color": "#ffffff", "circle-stroke-width": 1.5 } });
-
-  map.on("mousemove", "clients", (e) => {
-    map.getCanvas().style.cursor = "pointer";
-    const p = e.features[0].properties;
-    const rows = [`<b>Client ${p.id}</b>`, `demande ${p.demand}`];
-    if (p.route >= 0) rows.push(`camion ${p.route + 1}, étape ${p.step}`);
-    popup.setLngLat(e.features[0].geometry.coordinates).setHTML(rows.join("<br>")).addTo(map);
-  });
-  map.on("mouseleave", "clients", () => { map.getCanvas().style.cursor = ""; popup.remove(); });
 }
+
+// écouteurs liés à une couche : à poser une seule fois (ils survivent au rechargement du style)
+map.on("mousemove", "clients", (e) => {
+  map.getCanvas().style.cursor = "pointer";
+  const p = e.features[0].properties;
+  const rows = [`<b>Client ${p.id}</b>`, `demande ${p.demand}`];
+  if (p.route >= 0) rows.push(`camion ${p.route + 1}, étape ${p.step}`);
+  popup.setLngLat(e.features[0].geometry.coordinates).setHTML(rows.join("<br>")).addTo(map);
+});
+map.on("mouseleave", "clients", () => { map.getCanvas().style.cursor = ""; popup.remove(); });
 
 function render() {
   const inst = state.inst;

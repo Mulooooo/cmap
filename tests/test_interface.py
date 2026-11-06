@@ -188,6 +188,12 @@ def test_api_flags_an_invalid_team_solution(client):
         del solvers.SOLVERS["test-solution-incomplete"]
 
 
+@pytest.mark.skipif(not (ROOT / "frontend" / "dist").is_dir(), reason="frontend non compilé (npm run build)")
+def test_react_build_is_served(client):
+    r = client.get("/react/")
+    assert r.status_code == 200 and '<div id="root">' in r.text
+
+
 def test_static_page_is_served(client):
     r = client.get("/")
     assert r.status_code == 200 and "CMAP" in r.text

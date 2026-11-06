@@ -211,5 +211,10 @@ async def solve(request: Request, instance: str, solver: str, time_limit: float 
                              headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
-# Interface (doit être monté en dernier : il capte tout ce que l'API n'a pas pris).
+# Version React (si elle a été compilée : cd frontend && npm install && npm run build).
+REACT_DIST = ROOT / "frontend" / "dist"
+if REACT_DIST.is_dir():
+    app.mount("/react", StaticFiles(directory=REACT_DIST, html=True), name="react")
+
+# Interface HTML (doit être monté en dernier : il capte tout ce que l'API n'a pas pris).
 app.mount("/", StaticFiles(directory=STATIC, html=True), name="static")
