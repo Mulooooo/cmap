@@ -23,6 +23,8 @@ export interface Inst {
   km_per_unit: number;
   zone: string;
   span: number;
+  /** Meilleure solution connue (fichier .sol voisin), même format qu'un résultat de solveur. */
+  best: Solution | null;
 }
 
 export interface RouteStat {

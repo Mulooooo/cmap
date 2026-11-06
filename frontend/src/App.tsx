@@ -16,7 +16,8 @@ export default function App() {
     solver: "", limit: 10, seed: 0,
   });
   const [inst, setInst] = useState<Inst | null>(null);
-  const [routes, setRoutes] = useState<Routes | null>(null);
+  const [live, setLive] = useState<Routes | null>(null);  // tournées reçues pendant le calcul
+  const [view, setView] = useState<"best" | "mine">("mine");  // solution affichée
   const [solution, setSolution] = useState<Solution | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
@@ -37,9 +38,10 @@ export default function App() {
   const adopt = useCallback((i: Inst) => {
     stop();
     setInst(i);
-    setRoutes(null);
+    setLive(null);
     setSolution(null);
     setHighlight(null);
+    setView(i.best ? "best" : "mine");  // on montre d'abord la meilleure solution connue
   }, [stop]);
 
   // démarrage : configuration du serveur, puis première instance du dépôt
@@ -103,20 +105,27 @@ export default function App() {
     stop();
     setRunning(true);
     setSolution(null);
+    setLive(null);
+    setView("mine");
+    setHighlight(null);
     setStatus("Démarrage du calcul…");
     const finish = () => { stopRef.current = null; setRunning(false); setStatus(null); };
     stopRef.current = api.solve(
       { instance: inst.id, solver: controls.solver, timeLimit: controls.limit, seed: controls.seed },
       {
         onProgress: (p) => {
-          setRoutes(p.routes);
+          setLive(p.routes);
           setStatus(`Calcul en cours… ${fmt(p.elapsed)} s · meilleur coût ${fmt(p.cost)}`);
         },
-        onDone: (s) => { finish(); setRoutes(s.routes); setSolution(s); },
+        onDone: (s) => { finish(); setLive(null); setSolution(s); },
         onError: (m) => { finish(); setToast(m); },
       },
     );
   };
+
+  // ce que la carte et le tableau montrent : le calcul en cours, la meilleure connue ou ma solution
+  const shownSol = running ? null : view === "best" ? inst?.best ?? null : solution;
+  const shownRoutes = running ? live : shownSol?.routes ?? null;
 
   if (!config) {
     return <div className="app"><main><p className="note">Connexion au serveur…</p>{toast && <div className="toast">{toast}</div>}</main></div>;
@@ -150,8 +159,22 @@ export default function App() {
           )}
         </header>
 
+        {inst?.best && (
+          <div className="seg" role="group" aria-label="Solution affichée">
+            <button aria-pressed={view === "mine"} disabled={running || !solution}
+                    title={solution ? "" : "Lance un calcul pour comparer"}
+                    onClick={() => { setView("mine"); setHighlight(null); }}>
+              Ma solution
+            </button>
+            <button aria-pressed={view === "best"} disabled={running}
+                    onClick={() => { setView("best"); setHighlight(null); }}>
+              Meilleure solution connue
+            </button>
+          </div>
+        )}
+
         <div id="mapWrap">
-          <MapView inst={inst} routes={routes} highlight={highlight} basemap={controls.basemap} />
+          <MapView inst={inst} routes={shownRoutes} highlight={highlight} basemap={controls.basemap} />
           {status && <div className="status">{status}</div>}
           {toast && <div className="toast" role="alert">{toast}</div>}
         </div>
@@ -163,7 +186,7 @@ export default function App() {
           </p>
         )}
 
-        {inst && solution && !running && <Results inst={inst} solution={solution} onHover={setHighlight} />}
+        {inst && shownSol && <Results inst={inst} solution={shownSol} onHover={setHighlight} />}
       </main>
     </div>
   );

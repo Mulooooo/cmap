@@ -61,6 +61,11 @@
       <div id="stats" class="stats"></div>
     </header>
 
+    <div id="seg" class="seg" role="group" aria-label="Solution affichée" hidden>
+      <button id="segMine" aria-pressed="false" disabled title="Lance un calcul pour comparer">Ma solution</button>
+      <button id="segBest" aria-pressed="true">Meilleure solution connue</button>
+    </div>
+
     <div id="mapWrap">
       <div id="map"></div>
       <div id="status" class="status" hidden></div>
@@ -81,7 +86,7 @@
           <tbody></tbody>
         </table>
       </div>
-      <h3>Convergence</h3>
+      <h3 id="convTitle">Convergence</h3>
       <div id="chart" class="chart"></div>
     </section>
   </main>

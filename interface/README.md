@@ -37,7 +37,26 @@ page). Ajouter un `.vrp` dans `instances/` suffit pour qu'il apparaisse dans la 
 un redémarrage du serveur. La meilleure solution connue (gap) vient du commentaire du
 fichier, sinon du fichier `.sol` voisin (ligne `Cost N`).
 
-## Brancher le solveur de l'équipe
+## Meilleure solution connue
+
+Quand un fichier `.sol` du même nom est à côté du `.vrp` (c'est le cas des instances de
+`instances/A/`), l'interface l'affiche dès le chargement de l'instance, avec son tableau
+et son coût. Après un calcul, les boutons « Ma solution » / « Meilleure solution connue »
+permettent de comparer les deux sur la carte. Un fichier téléversé n'a pas de `.sol` :
+seul le calcul est affiché.
+
+## Solveurs disponibles
+
+Ceux du livrable 2 (notebook), portés dans `interface/notebook_solvers.py` :
+`Hill climbing (notebook)` et `Recuit simulé (notebook)`. L'en-tête du fichier liste les
+cellules d'origine et les (rares) écarts avec le notebook : distances arrondies, temps
+limite à la place du nombre d'itérations, graine configurable.
+
+Limite héritée du notebook : `is_possible` exige au plus `k` camions, mais le glouton de
+départ en utilise parfois plus (ex. A-n37-k6 : 7 pour k = 6). Aucun voisin n'est alors
+accepté, l'algorithme reste bloqué et l'interface affiche « Solution invalide ».
+
+## Brancher un autre solveur
 
 Le solveur est une fonction enregistrée dans `interface/solvers.py` (ou dans
 n'importe quel module importé par `interface/server.py`). Les deux interfaces le

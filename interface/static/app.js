@@ -19,6 +19,7 @@ const state = {
   inst: null,      // instance placée sur la carte (réponse de l'API)
   routes: null,    // tournées affichées (indices de clients, sans le dépôt)
   solution: null,  // résultat final du solveur
+  view: "mine",    // solution affichée : "mine" (calcul) ou "best" (meilleure connue)
   live: [],        // [temps, coût] reçus pendant le calcul
   es: null,        // EventSource en cours
 };
@@ -205,6 +206,27 @@ function showResults(sol) {
     return tr;
   }));
   drawChart(sol.history.map((h) => [h[0], h[2]]), inst.bks);
+  const hasCurve = sol.history.length >= 2;
+  $("convTitle").hidden = !hasCurve;
+  $("chart").hidden = !hasCurve;
+}
+
+// Met à jour carte, boutons et résultats selon ce qui doit être affiché :
+// le calcul en cours, ma solution, ou la meilleure solution connue.
+function refresh() {
+  const inst = state.inst;
+  if (!inst) return;
+  const running = !!state.es;
+  $("seg").hidden = !inst.best;
+  $("segMine").disabled = running || !state.solution;
+  $("segBest").disabled = running;
+  $("segMine").setAttribute("aria-pressed", String(state.view === "mine"));
+  $("segBest").setAttribute("aria-pressed", String(state.view === "best"));
+  const sol = running ? null : state.view === "best" ? inst.best : state.solution;
+  if (!running) state.routes = sol ? sol.routes : null;
+  render();
+  highlight(null);
+  if (sol) showResults(sol); else $("results").hidden = true;
 }
 
 // ------------------------------------------------- courbe de convergence (SVG)
@@ -252,12 +274,12 @@ async function setInstance(promise) {
     state.inst = await promise;
   } catch (e) { toast(e.message); return; }
   stopSolve();
-  state.routes = null; state.solution = null; state.live = [];
-  $("results").hidden = true;
+  state.solution = null; state.live = [];
+  state.view = state.inst.best ? "best" : "mine";  // on montre d'abord la meilleure solution connue
   $("status").hidden = true;
   $("run").disabled = false;
   showInstance();
-  render();
+  refresh();
   fit();
 }
 
@@ -285,9 +307,8 @@ function replace() {  // nouvelle zone / étendue : on replace les mêmes points
       state.inst = await api(`/api/instances/${state.inst.id}?${q}`);
     } catch (e) { toast(e.message); return; }
     $("scale").textContent = `Échelle : 1 unité de distance = ${nf.format(state.inst.km_per_unit)} km.`;
-    render();
+    refresh();  // les km changent avec l'échelle
     fit();
-    if (state.solution) showResults(state.solution);  // les km changent avec l'échelle
   }, 150);
 }
 
@@ -309,7 +330,8 @@ function startSolve() {
   setRunning(true);
   state.live = [];
   state.solution = null;
-  $("results").hidden = true;
+  state.view = "mine";
+  state.routes = null;
   const st = $("status");
   st.hidden = false;
   st.textContent = "Démarrage du calcul…";
@@ -318,6 +340,7 @@ function startSolve() {
     time_limit: $("limit").value, seed: $("seed").value || "0" });
   const es = new EventSource(`/api/solve?${q}`);
   state.es = es;
+  refresh();
 
   es.addEventListener("progress", (ev) => {
     const d = JSON.parse(ev.data);
@@ -329,11 +352,10 @@ function startSolve() {
   es.addEventListener("done", (ev) => {
     const sol = JSON.parse(ev.data);
     state.solution = sol;
-    state.routes = sol.routes;
+    state.view = "mine";
     stopSolve();
     st.hidden = true;
-    render();
-    showResults(sol);
+    refresh();
   });
   es.addEventListener("error", (ev) => {
     if (ev.data) {  // erreur envoyée par le serveur (solveur planté)
@@ -343,6 +365,7 @@ function startSolve() {
     }
     stopSolve();
     st.hidden = true;
+    refresh();
   });
 }
 
@@ -374,7 +397,14 @@ async function init() {
   // diff:false = rechargement complet du style, sinon MapLibre retire nos couches sans relancer "style.load"
   $("basemap").addEventListener("change", () =>
     map.setStyle(BASEMAPS[$("basemap").value], { diff: false }));
-  $("run").addEventListener("click", () => (state.es ? stopSolve() : startSolve()));
+  $("run").addEventListener("click", () => {
+    if (!state.es) return startSolve();
+    stopSolve();
+    $("status").hidden = true;
+    refresh();
+  });
+  $("segMine").addEventListener("click", () => { state.view = "mine"; refresh(); });
+  $("segBest").addEventListener("click", () => { state.view = "best"; refresh(); });
 
   const drop = $("drop"), file = $("file");
   drop.addEventListener("click", () => file.click());

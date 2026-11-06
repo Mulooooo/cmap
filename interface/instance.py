@@ -22,6 +22,7 @@ class Instance:
     bks: float | None  # meilleure solution connue (commentaire du fichier)
     comment: str = ""
     time_windows: np.ndarray | None = None  # (n, 2) pour CVRPTW, sinon None
+    best_routes: list[list[int]] | None = None  # tournées du fichier .sol voisin, si présent
 
     @property
     def n(self) -> int:
@@ -71,16 +72,25 @@ def _build(raw: dict) -> Instance:
 def load_instance(path: str | Path) -> Instance:
     """Charge un fichier .vrp depuis le disque.
 
-    Si le commentaire du fichier ne donne pas la valeur optimale, on la lit dans le
-    fichier .sol voisin (ligne « Cost N »), quand il existe.
+    Si un fichier .sol du même nom existe à côté, on en lit les tournées (meilleure
+    solution connue) et, si le commentaire du fichier ne donne pas la valeur
+    optimale, son coût (ligne « Cost N »).
     """
     path = Path(path)
     inst = _build(vrplib.read_instance(str(path)))
     sol = path.with_suffix(".sol")
-    if inst.bks is None and sol.is_file():
-        m = re.search(r"^Cost\s+([\d.]+)", sol.read_text(), flags=re.MULTILINE)
-        if m:
-            inst = replace(inst, bks=float(m.group(1)))
+    if sol.is_file():
+        text = sol.read_text()
+        routes = [
+            [int(c) for c in m.group(1).split()]
+            for m in re.finditer(r"^Route\s*#\d+\s*:\s*(.*)$", text, flags=re.MULTILINE)
+        ]
+        cost = re.search(r"^Cost\s+([\d.]+)", text, flags=re.MULTILINE)
+        inst = replace(
+            inst,
+            best_routes=[r for r in routes if r] or None,
+            bks=inst.bks if inst.bks is not None or not cost else float(cost.group(1)),
+        )
     return inst
 
 

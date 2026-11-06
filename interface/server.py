@@ -23,6 +23,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
+from interface import notebook_solvers  # noqa: F401  (enregistre les solveurs du notebook)
 from interface import solvers
 from interface.geo import PRESETS, place_on_map
 from interface.instance import Instance, load_instance, load_instance_from_bytes
@@ -80,6 +81,9 @@ def _payload(iid: str, inst: Instance, zone: str | None, span: float | None) -> 
         "km_per_unit": frame.km_per_unit,
         "zone": zone,
         "span": span,
+        # meilleure solution connue (fichier .sol voisin), au même format qu'un résultat de solveur
+        "best": None if not inst.best_routes else _solution_payload(
+            inst, solvers.make_solution(inst, inst.best_routes, "Meilleure solution connue")),
     }
 
 

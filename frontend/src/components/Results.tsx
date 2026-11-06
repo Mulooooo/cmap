@@ -54,8 +54,12 @@ export default function Results({ inst, solution: sol, onHover }: Props) {
         </table>
       </div>
 
-      <h3>Convergence</h3>
-      <Chart points={sol.history.map((h) => [h[0], h[2]])} bks={inst.bks} />
+      {sol.history.length >= 2 && (
+        <>
+          <h3>Convergence</h3>
+          <Chart points={sol.history.map((h) => [h[0], h[2]])} bks={inst.bks} />
+        </>
+      )}
     </section>
   );
 }

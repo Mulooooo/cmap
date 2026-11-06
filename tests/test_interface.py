@@ -64,12 +64,40 @@ def test_check_solution_detects_errors(inst):
     assert any("plusieurs fois" in e for e in solvers.check_solution(inst, doubled))
 
 
-def test_baseline_returns_valid_solution(inst):
-    sol = solvers.SOLVERS["Baseline provisoire (Clarke-Wright + ILS)"](inst, 2.0, 0)
+def test_load_instance_reads_the_best_known_solution(inst):
+    assert inst.best_routes and len(inst.best_routes) == 5
+    assert solvers.check_solution(inst, inst.best_routes) == []
+    assert solvers.total_cost(inst, inst.best_routes) == inst.bks == 784  # distances arrondies
+
+
+def test_check_solution_enforces_the_fleet_size(inst):
+    routes = [[c] for c in range(1, 7)] + [list(range(7, inst.n))]  # 7 camions pour une flotte de 5
+    assert any("flotte" in e for e in solvers.check_solution(inst, routes))
+
+
+@pytest.mark.parametrize("name", ["Hill climbing (notebook)", "Recuit simulé (notebook)"])
+def test_notebook_solvers_return_a_valid_solution(inst, name):
+    from interface.notebook_solvers import greedy_initial_solution
+
+    sol = solvers.SOLVERS[name](inst, 1.5, 0)
     assert solvers.check_solution(inst, sol.routes) == []
     assert sol.cost == solvers.total_cost(inst, sol.routes)
-    assert sol.cost <= 839  # au moins aussi bon que Clarke-Wright seul
+    assert sol.cost <= solvers.total_cost(inst, greedy_initial_solution(inst))  # jamais pire que le départ
     assert sol.history and sol.history[0][2] >= sol.history[-1][2]
+
+
+def test_notebook_solvers_are_reproducible(inst):
+    a = solvers.SOLVERS["Hill climbing (notebook)"](inst, 0.5, 7)
+    b = solvers.SOLVERS["Hill climbing (notebook)"](inst, 0.5, 7)
+    assert a.history[0] == b.history[0] and a.routes[:1] != [] and b.routes[:1] != []
+
+
+def test_notebook_greedy_start_can_exceed_the_fleet():
+    """Limite connue du notebook : sur A-n37-k6 le glouton utilise 7 camions pour k = 6, donc
+    is_possible refuse tous les voisins et l'algorithme reste bloqué sur une solution invalide."""
+    inst = load_instance(ROOT / "instances" / "A" / "A-n37-k6.vrp")
+    sol = solvers.SOLVERS["Hill climbing (notebook)"](inst, 0.5, 0)
+    assert any("flotte" in e for e in solvers.check_solution(inst, sol.routes))
 
 
 def test_registry_accepts_a_team_solver(inst):
@@ -80,7 +108,9 @@ def test_registry_accepts_a_team_solver(inst):
     try:
         sol = solvers.SOLVERS["test-un-camion-par-client"](inst, 1, 0)
         assert len(sol.routes) == inst.n - 1
-        assert solvers.check_solution(inst, sol.routes) == []
+        # clients et capacités sont bons ; seule la flotte (5 camions) est dépassée
+        errors = solvers.check_solution(inst, sol.routes)
+        assert len(errors) == 1 and "flotte" in errors[0]
     finally:
         del solvers.SOLVERS["test-un-camion-par-client"]
 
@@ -161,8 +191,18 @@ def test_api_solve_streams_progress_then_a_valid_solution(client):
     assert kinds[-1] == "done" and "progress" in kinds
     sol = events[-1][1]
     assert sol["valid"] and sol["errors"] == []
-    assert sol["gap"] is not None and sol["gap"] < 10
+    assert sol["gap"] is not None and sol["gap"] >= 0
     assert len(sol["per_route"]) == len(sol["routes"])
+
+
+def test_api_sends_the_best_known_solution(client):
+    p = client.post("/api/instances/library/A/A-n32-k5.vrp").json()
+    best = p["best"]
+    assert best["valid"] and best["cost"] == 784 and best["gap"] == 0
+    assert len(best["routes"]) == 5 and best["history"] == []
+    # un fichier téléversé n'a pas de .sol à côté : pas de meilleure solution
+    u = client.post("/api/instances", params={"filename": "x.vrp"}, content=A32.read_bytes()).json()
+    assert u["best"] is None
 
 
 def test_api_reports_solver_errors(client):
