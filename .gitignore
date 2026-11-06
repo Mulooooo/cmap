@@ -1,8 +1,11 @@
-.venv
-.obsidian
-gitignore
+.venv/
 __pycache__/
 .pytest_cache/
+.ipynb_checkpoints/
+/gitignore/
+.vscode/
+.DS_Store
+Thumbs.db
 node_modules
 node_modules.nosync
 frontend/dist/

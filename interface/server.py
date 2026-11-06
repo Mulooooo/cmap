@@ -38,7 +38,9 @@ STORE: "OrderedDict[str, Instance]" = OrderedDict()
 
 # ------------------------------------------------------------------ utilitaires
 def _library() -> dict[str, Path]:
-    return {p.name: p for p in sorted((ROOT / "instances").glob("*.vrp"))}
+    """Instances du dépôt, sous-dossiers compris, nommées par leur chemin relatif (ex. A/A-n32-k5.vrp)."""
+    base = ROOT / "instances"
+    return {p.relative_to(base).as_posix(): p for p in sorted(base.rglob("*.vrp"))}
 
 
 def _remember(inst: Instance) -> str:
@@ -140,7 +142,7 @@ async def upload_instance(request: Request, filename: str = "instance.vrp",
     return _payload(iid, inst, zone, span)
 
 
-@app.post("/api/instances/library/{name}")
+@app.post("/api/instances/library/{name:path}")
 def library_instance(name: str, zone: str | None = None, span: float | None = None):
     path = _library().get(name)  # on ne sert que les fichiers listés : pas de chemin libre
     if path is None:

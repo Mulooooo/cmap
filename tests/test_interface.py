@@ -10,7 +10,7 @@ from interface.geo import PRESETS, place_on_map
 from interface.instance import load_instance, load_instance_from_bytes
 
 ROOT = Path(__file__).resolve().parent.parent
-A32 = ROOT / "instances" / "A-n32-k5.vrp"
+A32 = ROOT / "instances" / "A" / "A-n32-k5.vrp"
 
 
 @pytest.fixture(scope="module")
@@ -23,6 +23,13 @@ def test_load_instance(inst):
     assert inst.n == 32 and inst.capacity == 100
     assert inst.n_vehicles == 5 and inst.bks == 784
     assert inst.demand[0] == 0 and inst.min_vehicles == 5
+
+
+def test_best_known_falls_back_to_the_sol_file(tmp_path):
+    text = A32.read_text().replace("Optimal value: 784", "")  # commentaire sans valeur optimale
+    (tmp_path / "x.vrp").write_text(text)
+    (tmp_path / "x.sol").write_text("Route #1: 1 2\nCost 784\n")
+    assert load_instance(tmp_path / "x.vrp").bks == 784
 
 
 def test_distances_rounded_like_tsplib(inst):
@@ -102,13 +109,13 @@ def _sse_events(response):
 
 def test_api_config(client):
     cfg = client.get("/api/config").json()
-    assert "A-n32-k5.vrp" in cfg["library"]
+    assert "A/A-n32-k5.vrp" in cfg["library"]
     assert "France entière" in cfg["zones"]
     assert cfg["solvers"]
 
 
 def test_api_library_instance_is_placed_on_the_map(client):
-    p = client.post("/api/instances/library/A-n32-k5.vrp").json()
+    p = client.post("/api/instances/library/A/A-n32-k5.vrp").json()
     assert p["name"] == "A-n32-k5" and p["n"] == 32 and p["bks"] == 784
     assert len(p["lat"]) == len(p["lon"]) == 32
     assert 41 < min(p["lat"]) and max(p["lat"]) < 52  # en France métropolitaine
@@ -124,7 +131,7 @@ def test_api_upload(client):
 
 def test_api_load_keeps_the_chosen_zone(client):
     params = {"zone": "Grand Est (Nancy)", "span": 120}
-    p = client.post("/api/instances/library/A-n32-k5.vrp", params=params).json()
+    p = client.post("/api/instances/library/A/A-n32-k5.vrp", params=params).json()
     assert p["zone"] == "Grand Est (Nancy)" and p["span"] == 120
     u = client.post("/api/instances", params={**params, "filename": "x.vrp"}, content=A32.read_bytes()).json()
     assert u["zone"] == "Grand Est (Nancy)" and u["span"] == 120
@@ -138,13 +145,13 @@ def test_api_rejects_bad_input(client):
     assert client.post("/api/instances/library/server.py").status_code == 404
     assert client.post("/api/instances/library/inconnu.vrp").status_code == 404
     assert client.get("/api/instances/nope").status_code == 404
-    iid = client.post("/api/instances/library/A-n32-k5.vrp").json()["id"]
+    iid = client.post("/api/instances/library/A/A-n32-k5.vrp").json()["id"]
     assert client.get(f"/api/instances/{iid}", params={"zone": "Mars"}).status_code == 400
     assert client.get("/api/solve", params={"instance": iid, "solver": "inconnu"}).status_code == 404
 
 
 def test_api_solve_streams_progress_then_a_valid_solution(client):
-    iid = client.post("/api/instances/library/A-n32-k5.vrp").json()["id"]
+    iid = client.post("/api/instances/library/A/A-n32-k5.vrp").json()["id"]
     solver = next(iter(client.get("/api/config").json()["solvers"]))
     with client.stream("GET", "/api/solve",
                        params={"instance": iid, "solver": solver, "time_limit": 2, "seed": 0}) as r:
@@ -164,7 +171,7 @@ def test_api_reports_solver_errors(client):
         raise RuntimeError("boum")
 
     try:
-        iid = client.post("/api/instances/library/A-n32-k5.vrp").json()["id"]
+        iid = client.post("/api/instances/library/A/A-n32-k5.vrp").json()["id"]
         with client.stream("GET", "/api/solve",
                            params={"instance": iid, "solver": "test-solveur-qui-plante"}) as r:
             events = _sse_events(r)
@@ -179,7 +186,7 @@ def test_api_flags_an_invalid_team_solution(client):
         return solvers.make_solution(inst, [[1, 2, 3]], "incomplete")
 
     try:
-        iid = client.post("/api/instances/library/A-n32-k5.vrp").json()["id"]
+        iid = client.post("/api/instances/library/A/A-n32-k5.vrp").json()["id"]
         with client.stream("GET", "/api/solve",
                            params={"instance": iid, "solver": "test-solution-incomplete"}) as r:
             sol = _sse_events(r)[-1][1]

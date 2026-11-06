@@ -2,7 +2,7 @@
 
 import re
 import tempfile
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 import numpy as np
@@ -69,8 +69,19 @@ def _build(raw: dict) -> Instance:
 
 
 def load_instance(path: str | Path) -> Instance:
-    """Charge un fichier .vrp depuis le disque."""
-    return _build(vrplib.read_instance(str(path)))
+    """Charge un fichier .vrp depuis le disque.
+
+    Si le commentaire du fichier ne donne pas la valeur optimale, on la lit dans le
+    fichier .sol voisin (ligne « Cost N »), quand il existe.
+    """
+    path = Path(path)
+    inst = _build(vrplib.read_instance(str(path)))
+    sol = path.with_suffix(".sol")
+    if inst.bks is None and sol.is_file():
+        m = re.search(r"^Cost\s+([\d.]+)", sol.read_text(), flags=re.MULTILINE)
+        if m:
+            inst = replace(inst, bks=float(m.group(1)))
+    return inst
 
 
 def load_instance_from_bytes(data: bytes, filename: str = "instance.vrp") -> Instance:

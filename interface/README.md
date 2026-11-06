@@ -31,8 +31,11 @@ npm run build                  # produit frontend/dist, servi sur /react/ par py
 npm run dev                    # http://localhost:5173
 ```
 
-L'instance se choisit dans le panneau de gauche : un fichier de `instances/` ou un
-fichier `.vrp` glissé / téléversé (n'importe où sur la page).
+L'instance se choisit dans le panneau de gauche : un fichier de `instances/` (sous-dossiers
+compris, ex. `A/A-n32-k5.vrp`) ou un fichier `.vrp` glissé / téléversé (n'importe où sur la
+page). Ajouter un `.vrp` dans `instances/` suffit pour qu'il apparaisse dans la liste après
+un redémarrage du serveur. La meilleure solution connue (gap) vient du commentaire du
+fichier, sinon du fichier `.sol` voisin (ligne `Cost N`).
 
 ## Brancher le solveur de l'équipe
 
