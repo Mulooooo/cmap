@@ -58,6 +58,7 @@ class FakeApi:
         self.start_error = None  # ApiError à lever au lancement
         self.upload_error = None
         self.instance_error = None
+        self.job_script = None  # états successifs de job() ; le dernier se répète
 
     def _guard(self, name, *args):
         self.calls.append((name, *args))
@@ -92,6 +93,11 @@ class FakeApi:
 
     def job(self, job_id):
         self._guard("job", job_id)
+        if self.job_script:
+            state = self.job_script[0]
+            if len(self.job_script) > 1:
+                self.job_script.pop(0)
+            return state
         if self.job_state is None:
             raise ApiError(404, "not_found", "Calcul inconnu")
         return self.job_state
@@ -120,7 +126,7 @@ def fake():
 
 @pytest.fixture
 def client(fake):
-    return create_site(api=fake).test_client()
+    return create_site({"WAIT_POLL_SECONDS": 0.001}, api=fake).test_client()
 
 
 # ----------------------------------------------------------------------------- pages
@@ -139,16 +145,97 @@ def test_the_page_has_no_javascript_of_its_own(client, fake):
     assert "<script" not in html.lower() and "onclick" not in html.lower()  # la carte est dans l'iframe srcdoc
 
 
-def test_running_job_never_reloads_by_itself_but_offers_a_refresh_button(client, fake):
-    """Un rechargement automatique fait clignoter la carte : l'utilisateur actualise lui-même."""
+def test_a_running_job_sends_the_page_to_the_waiting_page(client, fake):
     fake.job_state = job_state("running")
-    html = client.get("/?job=j1").get_data(as_text=True)
-    assert '<meta http-equiv="refresh"' not in html
-    assert "■ Arrêter" in html and "Calcul en cours" in html and "meilleur coût 90" in html
-    assert "↻ Actualiser" in html and 'href="/?' in html and "job=j1" in html.split("↻ Actualiser")[0].rsplit('href="', 1)[1]
+    r = client.get("/?instance=A-n32-k5&zone=Île-de-France&job=j1")
+    assert r.status_code == 303
+    loc = r.headers["Location"]
+    assert loc.startswith("/calcul?") and "job=j1" in loc and "instance=A-n32-k5" in loc and "zone=" in loc
     fake.job_state = job_state("done", result=RESULT)
-    assert "↻ Actualiser" not in client.get("/?job=j1").get_data(as_text=True)  # plus rien à actualiser
-    assert 'id="mine"' in html and 'id="v-best"' not in html  # pas d'onglets avant la fin
+    assert client.get("/?job=j1").status_code == 200  # fini : la page de résultat s'affiche
+    assert "Actualiser" not in client.get("/?job=j1").get_data(as_text=True)  # plus aucun bouton à presser
+
+
+# ------------------------------------------------------- la page d'attente (/calcul)
+WAIT = "/calcul?instance=A-n32-k5&zone=France+entière&solver=hill_climbing&limit=10&seed=0&job=j1"
+
+
+def test_waiting_page_shows_a_spinner_then_forwards_to_the_result(client, fake):
+    fake.job_script = [job_state("running"), job_state("running"), job_state("running"),
+                       job_state("done", result=RESULT)]
+    r = client.get(WAIT)
+    html = r.get_data(as_text=True)
+    assert r.status_code == 200 and r.mimetype == "text/html" and r.headers["Cache-Control"] == "no-store"
+    assert 'class="spinner"' in html and "Calcul en cours" in html and "Hill climbing" in html and "A-n32-k5" in html
+    assert "Arrêter le calcul" in html and 'name="job" value="j1"' in html  # on peut l'arrêter depuis l'attente
+    assert "<script" not in html.lower()
+    # l'ordre d'aller sur le résultat n'arrive qu'à la fin, une fois le calcul terminé, et pointe vers la page de résultat
+    meta = html.index('<meta http-equiv="refresh" content="0;url=/?')
+    assert html.index('class="spinner"') < meta and html.count('<meta http-equiv="refresh"') == 1
+    url = html[meta:].split('url=')[1].split('">')[0].replace("&amp;", "&")
+    assert url.startswith("/?") and "job=j1" in url and "instance=A-n32-k5" in url and "notice" not in url
+    assert sum(1 for c in fake.calls if c[0] == "job") >= 4  # elle a bien attendu la fin du calcul
+
+
+def test_the_page_the_waiting_page_points_to_shows_the_result(client, fake):
+    fake.job_script = [job_state("running"), job_state("done", result=RESULT)]
+    html = client.get(WAIT).get_data(as_text=True)
+    url = html.split('<meta http-equiv="refresh" content="0;url=')[1].split('">')[0].replace("&amp;", "&")
+    fake.job_script = None
+    fake.job_state = job_state("done", result=RESULT)
+    result = client.get(url).get_data(as_text=True)
+    assert "Solution valide (Hill climbing)" in result and 'id="mine"' in result and 'class="spinner"' not in result
+
+
+def test_waiting_page_for_a_finished_job_goes_straight_to_the_result(client, fake):
+    fake.job_state = job_state("done", result=RESULT)
+    r = client.get(WAIT)
+    assert r.status_code == 303 and r.headers["Location"].startswith("/?") and "job=j1" in r.headers["Location"]
+
+
+@pytest.mark.parametrize("setup", ["no_job", "unknown_job", "server_down"])
+def test_waiting_page_never_leaves_you_on_a_dead_end(client, fake, setup):
+    url = WAIT
+    if setup == "no_job":
+        url = "/calcul?instance=A-n32-k5"
+    elif setup == "unknown_job":
+        fake.job_state = None  # le serveur de calcul a oublié ce calcul
+    else:
+        fake.down = True
+    r = client.get(url)
+    assert r.status_code == 303 and r.headers["Location"].startswith("/?")  # la page principale explique le problème
+
+
+def test_waiting_page_ends_even_if_the_compute_server_dies_meanwhile(client, fake):
+    class Dies(FakeApi):
+        def job(self, job_id):
+            self.calls.append(("job", job_id))
+            if sum(1 for c in self.calls if c[0] == "job") > 2:
+                raise Unreachable("Serveur de calcul injoignable (http://fake)")
+            return job_state("running")
+
+    dies = Dies()
+    html = create_site({"WAIT_POLL_SECONDS": 0.001}, api=dies).test_client().get(WAIT).get_data(as_text=True)
+    assert 'http-equiv="refresh" content="0;url=/?' in html  # on quitte l'attente, la page principale dira « injoignable »
+
+
+def test_waiting_page_gives_up_after_the_time_limit_plus_a_margin(fake):
+    fake.job_state = job_state("running", time_limit=0.05)  # un calcul qui ne finit jamais
+    site = create_site({"WAIT_POLL_SECONDS": 0.001, "WAIT_EXTRA_SECONDS": 0.05}, api=fake).test_client()
+    started = time.time()
+    html = site.get(WAIT).get_data(as_text=True)
+    assert time.time() - started < 5 and 'http-equiv="refresh" content="0;url=/?' in html
+
+
+def test_waiting_page_explains_when_it_waits_for_someone_elses_job(client, fake):
+    fake.job_script = [job_state("running"), job_state("done", result=RESULT)]
+    html = client.get(WAIT + "&notice=busy").get_data(as_text=True)
+    assert "un seul calcul à la fois" in html and "notice" not in html.split('content="0;url=')[1].split('">')[0]
+
+
+def test_waiting_page_progress_bar_lasts_as_long_as_the_calculation(client, fake):
+    fake.job_script = [job_state("running", time_limit=7), job_state("done", result=RESULT)]
+    assert "animation-duration: 8.5s" in client.get(WAIT).get_data(as_text=True)  # 7 s + 1,5 s de démarrage
 
 
 def test_finished_job_shows_both_solutions_and_no_reload(client, fake):
@@ -225,15 +312,16 @@ def post(client, **fields):
 
 def test_calculer_starts_a_job_and_redirects_to_it(client, fake):
     r = post(client, action="solve", solver="simulated_annealing", limit="7", seed="3")
-    assert r.status_code == 303 and "job=j1" in r.headers["Location"] and "instance=A-n32-k5" in r.headers["Location"]
+    loc = r.headers["Location"]
+    assert r.status_code == 303 and loc.startswith("/calcul?") and "job=j1" in loc and "instance=A-n32-k5" in loc
     assert ("start_job", "A-n32-k5", "simulated_annealing", 7, 3) in fake.calls
 
 
 def test_calculer_while_another_job_runs_shows_that_job(client, fake):
     fake.start_error = ApiError(409, "busy", "Un calcul est déjà en cours", {"job_id": "autre"})
     loc = post(client, action="solve").headers["Location"]
-    assert "job=autre" in loc and "notice=busy" in loc
-    fake.job_state = job_state("running", job_id="autre")
+    assert loc.startswith("/calcul?") and "job=autre" in loc and "notice=busy" in loc
+    fake.job_script = [job_state("running", job_id="autre"), job_state("done", job_id="autre", result=RESULT)]
     assert "un seul calcul à la fois" in client.get(loc).get_data(as_text=True)
 
 
@@ -309,20 +397,20 @@ def test_real_home_page(real):
 def test_real_run_from_the_form_to_the_result_page(real):
     site, api = real
     r = post(site, action="solve", limit="2")
-    assert r.status_code == 303
+    assert r.status_code == 303 and r.headers["Location"].startswith("/calcul?")
     url = r.headers["Location"]
-    time.sleep(0.5)
-    running = site.get(url).get_data(as_text=True)
-    assert "Calcul en cours" in running and "Arrêter" in running and "Actualiser" in running
-    # un 2e calcul pendant celui-là : refusé par le serveur de calcul, le site affiche le premier
+    # un 2e calcul pendant celui-là : refusé par le serveur de calcul, on attend le premier
     again = post(site, action="solve", limit="2").headers["Location"]
-    assert "notice=busy" in again and again.split("job=")[1].split("&")[0] == url.split("job=")[1].split("&")[0]
+    assert again.startswith("/calcul?") and "notice=busy" in again
+    assert again.split("job=")[1].split("&")[0] == url.split("job=")[1].split("&")[0]
 
-    deadline = time.time() + 30
-    while time.time() < deadline and "Calcul en cours" in (page := site.get(url).get_data(as_text=True)):
-        time.sleep(0.3)
+    started = time.time()
+    waiting = site.get(url).get_data(as_text=True)  # la page reste ouverte jusqu'à la fin du calcul
+    assert time.time() - started >= 1.5 and 'class="spinner"' in waiting
+    forward = waiting.split('<meta http-equiv="refresh" content="0;url=')[1].split('">')[0].replace("&amp;", "&")
+    page = site.get(forward).get_data(as_text=True)  # ... puis la page de résultat, sans rien presser
     assert "Solution valide (Hill climbing)" in page and 'id="mine"' in page and 'id="best"' in page
-    assert "Convergence" in page and "Gap vs meilleure connue" in page
+    assert "Convergence" in page and "Gap vs meilleure connue" in page and "Actualiser" not in page
 
 
 def test_real_stop_from_the_form(real):
@@ -330,9 +418,11 @@ def test_real_stop_from_the_form(real):
     url = post(site, action="solve", limit="60").headers["Location"]
     job = url.split("job=")[1].split("&")[0]
     time.sleep(1.5)
-    assert post(site, action="stop", job=job).status_code == 303
-    html = site.get(url).get_data(as_text=True)
+    stopped = post(site, action="stop", job=job)
+    assert stopped.status_code == 303 and stopped.headers["Location"].startswith("/?")
+    html = site.get(stopped.headers["Location"]).get_data(as_text=True)
     assert "Calcul arrêté" in html and "Hill climbing, arrêté" in html and 'http-equiv="refresh"' not in html
+    assert site.get(url).status_code == 303  # la page d'attente d'un calcul arrêté renvoie vers le résultat
 
 
 def test_real_upload_then_compute_on_it(real):

@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Calcul en cours · CMAP</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🚚</text></svg>">
+  <style>{{ css | safe }}</style>
+</head>
+<body>
+<main>
+  <header class="top">
+    <div>
+      <p class="brand">CMAP · Tournées de livraison</p>
+      <h1>{{ instance }} <small>calcul en cours</small></h1>
+    </div>
+  </header>
+
+  <section class="waiting" aria-live="polite">
+    <div class="spinner" role="img" aria-label="Calcul en cours"></div>
+    <h2>Calcul en cours…</h2>
+    <p class="what">{{ solver }} · {{ instance }} · {{ time_limit | fr }} s</p>
+    {% if notice %}<div class="banner info">{{ notice }}</div>{% endif %}
+    <div class="bar" aria-hidden="true"><i style="animation-duration: {{ duration }}s"></i></div>
+    <p class="note">Le résultat s'affiche tout seul à la fin du calcul.</p>
+    <form method="post" action="/">
+      {% for key, value in state.items() %}<input type="hidden" name="{{ key }}" value="{{ value }}">{% endfor %}
+      <button type="submit" name="action" value="stop" class="secondary stop-link">■ Arrêter le calcul</button>
+    </form>
+  </section>
+<!--SUITE-->
+  <p class="note">Si la page ne change pas toute seule, <a href="{{ url }}">voir le résultat</a>.</p>
+</main>
+</body>
+</html>

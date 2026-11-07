@@ -243,8 +243,8 @@ def test_simulation_needs_a_finished_solution(fake):
     html = page(client, "/?instance=A-n32-k5&sim=mine")  # pas de calcul
     assert "abord un calcul" in html and "Route réelle" not in html and 'srcdoc="' in html  # la carte normale reste
     fake.job_state = job_state("running")
-    html = page(client, "/?instance=A-n32-k5&job=j1&sim=mine")  # calcul en cours : pas de simulation
-    assert "Route réelle" not in html and "Calcul en cours" in html
+    r = client.get("/?instance=A-n32-k5&job=j1&sim=mine")  # calcul en cours : on attend sa fin, pas de simulation
+    assert r.status_code == 303 and r.headers["Location"].startswith("/calcul?")
     fake.job_state = None
     assert "existe plus" in page(client, "/?instance=A-n32-k5&job=perdu&sim=mine")
 
@@ -304,7 +304,7 @@ def test_simulate_buttons_point_to_the_same_page(fake):
     assert html.count("Simuler sur les vraies routes") == 2 and "sim=mine" in html and "job=j1" in html
 
     fake.job_state = job_state("running")
-    assert "Simuler sur les vraies routes" not in page(client, "/?job=j1")
+    assert client.get("/?job=j1").status_code == 303  # en cours : page d'attente, rien à simuler
 
 
 def test_the_simulated_solution_offers_to_quit_the_simulation(fake):

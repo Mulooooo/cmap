@@ -14,6 +14,10 @@ class Config:
 
     MAX_UPLOAD = 20 * 1024 * 1024
 
+    # page d'attente d'un calcul : le serveur demande l'état du calcul toutes les 0,4 s, jusqu'à la fin
+    WAIT_POLL_SECONDS = 0.4
+    WAIT_EXTRA_SECONDS = 60  # marge au-delà du temps limite avant d'abandonner l'attente
+
     # simulation sur les vraies routes (OSRM) ; pour un usage intensif, installer OSRM et changer l'adresse
     OSRM_URL = os.environ.get("OSRM_URL", "https://router.project-osrm.org")
     OSRM_TIMEOUT = float(os.environ.get("OSRM_TIMEOUT", "25"))

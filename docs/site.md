@@ -30,10 +30,15 @@ python -m web         # 2) le site               -> http://127.0.0.1:5002
 | Résultats | carte, coût, gap, tableau par camion, courbe de convergence | `GET /api/jobs/<id>` |
 
 - La page affiche d'abord la **meilleure solution connue** de l'instance (fichier `.sol`).
-- Pendant un calcul, la page **ne se recharge pas toute seule** (un rechargement automatique fait clignoter la
-  carte, et sans JavaScript on ne peut pas faire autrement). Le bandeau « Calcul en cours » a un bouton
-  **↻ Actualiser** : chaque clic relit l'état du calcul (`GET /api/jobs/<id>`) et redessine la carte avec la
-  meilleure solution trouvée. **■ Arrêter** garde la meilleure solution trouvée jusque-là.
+- **Parcours d'un calcul : Calculer → un rond qui tourne → le résultat s'affiche tout seul.** « Calculer » mène à
+  `/calcul`, une page d'attente (rond animé et barre de progression en CSS, bouton « ■ Arrêter le calcul ») envoyée
+  tout de suite. Le site garde cette page ouverte pendant que le serveur de calcul travaille (il lui demande l'état
+  du calcul toutes les 0,4 s), puis, à la fin, lui ajoute l'ordre d'aller sur la page de résultat
+  (`<meta http-equiv="refresh" content="0;url=…">`, que le navigateur applique dès qu'il l'a reçu). Une seule
+  navigation : **aucun rechargement qui clignote, aucun bouton à presser**, et pas de JavaScript.
+- « Arrêter » garde la meilleure solution trouvée jusque-là. Si un calcul tourne déjà quand on en lance un autre
+  (un seul à la fois), on attend celui-là. Recharger la page d'un calcul en cours renvoie vers la page d'attente.
+- La page d'attente ne montre pas la carte qui avance : on ne voit que le résultat final.
 - Une fois le calcul fini, les onglets **Ma solution / Meilleure solution connue** (en CSS) changent
   la carte et le tableau ; le bouton de couches de la carte permet aussi de superposer les deux.
 - Un seul calcul à la fois : lancer un calcul pendant qu'un autre tourne affiche celui qui tourne.

@@ -1,23 +1,27 @@
 """Les pages du site : un formulaire HTML et des pages générées côté serveur (aucun JavaScript).
 
-L'état de la page est dans l'URL (instance, zone, solveur, calcul en cours, simulation). Sans
-JavaScript une page ne peut pas se mettre à jour sans se recharger, et un rechargement automatique
-fait clignoter la carte : pendant un calcul la page ne bouge donc pas toute seule, un bouton
-« Actualiser » relit l'état du calcul (un appel à `GET /api/jobs/<id>` à chaque clic).
+L'état de la page est dans l'URL (instance, zone, solveur, calcul en cours, simulation).
 Tout ce qui touche au serveur de calcul passe par `web.api_client.ApiClient`.
 
-  GET  /    la page (paramètres : instance, zone, span, solver, limit, seed, job, sim, notice)
-  POST /    le formulaire : action = show | solve | stop, fichier .vrp optionnel
+Parcours d'un calcul, sans JavaScript et sans rechargement qui clignote :
+  Calculer -> /calcul : page d'attente (un rond qui tourne) envoyée tout de suite, que le serveur garde
+  ouverte pendant que le calcul tourne ; à la fin il y ajoute « va sur la page de résultat » -> /
+
+  GET  /        la page (paramètres : instance, zone, span, solver, limit, seed, job, sim, notice)
+  POST /        le formulaire : action = show | solve | stop, fichier .vrp optionnel
+  GET  /calcul  la page d'attente d'un calcul en cours (même paramètres, job obligatoire)
 """
 
 import math
 import secrets
+import time
 from collections import OrderedDict
 from pathlib import Path
 from urllib.parse import urlencode
 
 import numpy as np
 from flask import Blueprint, Response, current_app, redirect, render_template, request
+from markupsafe import escape
 
 from web.api_client import ApiError, Unreachable
 from web.figures import MapLayer, build_map, convergence_svg, fr, route_color
@@ -27,7 +31,8 @@ from web.simulation import build_simulation, clock
 
 bp = Blueprint("site", __name__)
 
-NOTICES = {"busy": "Un calcul était déjà en cours : le voici (un seul calcul à la fois)."}
+NOTICES = {"busy": "Un calcul était déjà en cours : on attend sa fin (un seul calcul à la fois)."}
+STATE_KEYS = ("instance", "zone", "span", "solver", "limit", "seed", "job", "notice")  # l'état de la page, dans l'URL
 
 
 def _api():
@@ -93,8 +98,11 @@ def _num(text, default, lo, hi, cast=float):
         return default
 
 
-def render_page(params: dict, error: str | None = None, status: int = 200):
-    """Construit la page à partir des paramètres (ceux de l'URL ou du formulaire)."""
+def render_page(params: dict, error: str | None = None, status: int = 200, wait_if_running: bool = False):
+    """Construit la page à partir des paramètres (ceux de l'URL ou du formulaire).
+
+    Avec `wait_if_running`, un calcul en cours envoie vers la page d'attente au lieu d'afficher
+    un résultat partiel : le résultat arrive tout seul à la fin."""
     api, cfg = _api(), current_app.config
     zone = params.get("zone") if params.get("zone") in PRESETS else next(iter(PRESETS))
     span_default = PRESETS[zone][2]
@@ -106,7 +114,7 @@ def render_page(params: dict, error: str | None = None, status: int = 200):
     ctx = {
         "error": error or NOTICES.get(params.get("notice")), "api_ok": True,
         "zones": list(PRESETS), "zone": zone, "span_input": span_typed, "span_default": int(span_default),
-        "limit": limit, "seed": seed, "solvers": [], "solver": params.get("solver"), "refresh_url": None,
+        "limit": limit, "seed": seed, "solvers": [], "solver": params.get("solver"),
         "instances": [], "instance_id": None, "inst": None, "job": None, "running": False, "banner": None,
         "settings": {}, "tabs": False, "map_main": None, "map_best": None, "mine": None, "best": None,
         "scale": None, "sim_urls": {}, "sim": None, "sim_active": None, "sim_exit_url": None,
@@ -174,6 +182,9 @@ def render_page(params: dict, error: str | None = None, status: int = 200):
 
     # ---- ma solution : le résultat final, sinon la meilleure trouvée jusque-là
     running = job is not None and job["status"] == "running"
+    if running and wait_if_running:
+        state = {k: params.get(k) for k in STATE_KEYS if params.get(k)}
+        return redirect("/calcul?" + urlencode({**state, "instance": wanted, "job": job["job_id"]}), code=303)
     mine = None
     if job is not None:
         label = {"running": "en cours", "stopped": "arrêté"}.get(job["status"])
@@ -188,7 +199,7 @@ def render_page(params: dict, error: str | None = None, status: int = 200):
                                  stats=route_stats(inst, job["routes"]), cost=job["best_cost"],
                                  elapsed=job["elapsed"], history=job["history"], km_per_unit=kpu, valid=True)
         ctx["settings"] = {"Solveur": solver_name, "Temps limite": f"{fr(job['time_limit'])} s", "Graine": str(job["seed"])}
-        if running:  # la page ne se recharge pas toute seule (ça clignote) : on propose « Actualiser »
+        if running:
             ctx["banner"] = (f"Calcul en cours… {fr(job['elapsed'])} s sur {fr(job['time_limit'])} s"
                              + (f" · meilleur coût {fr(job['best_cost'])}" if job["best_cost"] is not None else ""))
         elif job["status"] == "stopped":
@@ -226,7 +237,6 @@ def render_page(params: dict, error: str | None = None, status: int = 200):
         if best is not None:
             ctx["sim_urls"]["best"] = "/?" + urlencode({**base, "sim": "best"}) + "#carte"
     ctx["sim_exit_url"] = "/?" + urlencode(base) + "#carte"
-    ctx["refresh_url"] = "/?" + urlencode(base)
 
     sim_view = params.get("sim") if params.get("sim") in ("mine", "best") else None
     sim_routes = sim_title = None
@@ -279,14 +289,59 @@ def render_page(params: dict, error: str | None = None, status: int = 200):
 
 
 # ----------------------------------------------------------------------------- routes
-def _redirect(params: dict):
+def _redirect(params: dict, path: str = "/"):
     q = {k: v for k, v in params.items() if v not in (None, "")}
-    return redirect("/?" + urlencode(q), code=303)
+    return redirect(f"{path}?" + urlencode(q), code=303)
 
 
 @bp.get("/")
 def index():
-    return render_page(dict(request.args))
+    return render_page(dict(request.args), wait_if_running=True)
+
+
+@bp.get("/calcul")
+def waiting():
+    """Page d'attente d'un calcul : un rond qui tourne, puis le résultat s'affiche tout seul.
+
+    Sans JavaScript : la page est envoyée tout de suite (le rond est une animation CSS) et la
+    connexion reste ouverte pendant que le serveur de calcul travaille ; à la fin on ajoute une
+    balise « va sur la page de résultat » (`<meta http-equiv="refresh">`, que le navigateur applique
+    dès qu'elle arrive). Une seule navigation : rien ne clignote, rien à actualiser."""
+    api, cfg = _api(), current_app.config
+    state = {k: request.args.get(k) for k in STATE_KEYS if request.args.get(k)}
+    # la page qui montrera le résultat (ou l'explication d'un problème) ; sans le message « un calcul tournait déjà »,
+    # qui n'a de sens que pendant l'attente
+    result_url = "/?" + urlencode({k: v for k, v in state.items() if k != "notice"})
+    if not state.get("job"):
+        return redirect(result_url, code=303)
+    try:
+        job = api.job(state["job"])
+        solver_name = dict((s["id"], s["name"]) for s in api.solvers()).get(job["solver"], job["solver"])
+    except (ApiError, Unreachable):
+        return redirect(result_url, code=303)  # calcul oublié, serveur éteint : la page principale l'explique
+    if job["status"] != "running":
+        return redirect(result_url, code=303)  # déjà fini : directement le résultat
+
+    page = render_template(
+        "waiting.html", instance=job["instance_id"], solver=solver_name, time_limit=job["time_limit"],
+        duration=job["time_limit"] + 1.5, url=result_url,  # + le démarrage du calcul
+        state={k: v for k, v in state.items() if k != "notice"}, notice=NOTICES.get(state.get("notice")))
+    head, tail = page.split("<!--SUITE-->")
+    job_id, poll = job["job_id"], cfg["WAIT_POLL_SECONDS"]
+    give_up = time.monotonic() + job["time_limit"] + cfg["WAIT_EXTRA_SECONDS"]
+
+    def stream():
+        yield head + "<!-- " + "." * 1024 + " -->\n"  # de quoi pousser le début de la page jusqu'au navigateur
+        while time.monotonic() < give_up:
+            time.sleep(poll)
+            try:
+                if api.job(job_id)["status"] != "running":
+                    break
+            except (ApiError, Unreachable):
+                break  # la page de résultat dira ce qui s'est passé
+        yield f'<meta http-equiv="refresh" content="0;url={escape(result_url)}">' + tail
+
+    return Response(stream(), mimetype="text/html", headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"})
 
 
 @bp.post("/")
@@ -312,12 +367,13 @@ def submit():
         if action == "solve":
             started = api.start_job(params["instance"], params["solver"],
                                     _num(params["limit"], 10, 1, 300, int), _num(params["seed"], 0, 0, 100000, int))
-            return _redirect({**params, "job": started["job_id"], "sim": ""})  # nouveau calcul : plus de simulation
+            # nouveau calcul : plus de simulation, et la page d'attente (le rond qui tourne)
+            return _redirect({**params, "job": started["job_id"], "sim": ""}, "/calcul")
     except Unreachable as exc:
         return render_page(params, str(exc), 200)
     except ApiError as exc:
         if exc.code == "busy":  # un autre calcul tourne : on affiche celui-là
-            return _redirect({**params, "job": exc.body.get("job_id"), "notice": "busy"})
+            return _redirect({**params, "job": exc.body.get("job_id"), "notice": "busy"}, "/calcul")
         return render_page(params, exc.message, exc.status if exc.status < 500 else 502)
     return _redirect(params)  # action == "show"
 
